@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdi
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import QSize, Qt, QRectF,QEvent
+from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
@@ -627,123 +627,94 @@ class StyledToggleSwitch(QCheckBox):
         """)
 
 
-class PillTabBar(QWidget):
-    tabChanged = pyqtSignal(int, str)
- 
-    def __init__(self, tabs: list[str] = None, parent=None):
+class StyledTabBar(QWidget):
+    tab_clicked = pyqtSignal(str)  # emits the name of the clicked tab
+
+    def __init__(self, tab_names: dict, parent=None):
         super().__init__(parent)
-        self._tabs = tabs or ["Home", "Explore", "Profile"]
-        self._selected = 0
-        self._buttons: list[QPushButton] = []
- 
-        self._track_color = QColor("#EBEBEB")
-        self._selected_color = QColor("#FFFFFF")
-        self._text_active = QColor("#111111")
-        self._text_inactive = QColor("#888888")
-        self._border_color = QColor("#DDDDDD")
- 
-        self._padding = 5
-        self._btn_h = 38
-        self._btn_radius = self._btn_h // 2
- 
-        self._setup_ui()
- 
-    def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(
-            self._padding, self._padding,
-            self._padding, self._padding
-        )
-        layout.setSpacing(4)
- 
-        font = QFont("SF Pro Display", 13)
-        font.setWeight(QFont.Medium)
- 
-        for i, label in enumerate(self._tabs):
-            btn = QPushButton(label)
-            btn.setFont(font)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setFixedHeight(self._btn_h)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.setFocusPolicy(Qt.NoFocus)
-            btn.clicked.connect(lambda _, idx=i: self.select_tab(idx))
-            self._buttons.append(btn)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #0a1628;
+                border-radius: 10px;
+            }
+        """)
+
+        self.tab_names_signals_dict = tab_names
+        self.tab_names = list(self.tab_names_signals_dict.keys())
+        self.active_tab = self.tab_names[0]
+        self.buttons = {}
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+        self.setLayout(layout)
+
+        for name in tab_names:
+            btn = QPushButton(name)
+            btn.setCheckable(False)
+            btn.clicked.connect(lambda checked, n=name: self._on_tab_clicked(n))
+            self.buttons[name] = btn
             layout.addWidget(btn)
- 
-        self._apply_styles()
-        self._update_appearance()
- 
-    def _apply_styles(self):
-        for i, btn in enumerate(self._buttons):
-            btn.setStyleSheet("""
-                QPushButton {
-                    border: none;
-                    background: transparent;
-                    border-radius: 19px;
-                    padding: 0 20px;
-                    color: #888888;
-                }
-                QPushButton:hover {
-                    background: rgba(0, 0, 0, 0.05);
-                }
-            """)
- 
-    def _update_appearance(self):
-        for i, btn in enumerate(self._buttons):
-            if i == self._selected:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        border: none;
-                        background: #FFFFFF;
-                        border-radius: 19px;
-                        padding: 0 20px;
-                        color: #111111;
-                    }
-                """)
-            else:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        border: none;
-                        background: transparent;
-                        border-radius: 19px;
-                        padding: 0 20px;
-                        color: #888888;
-                    }
-                    QPushButton:hover {
-                        background: rgba(0, 0, 0, 0.05);
-                    }
-                """)
- 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
- 
-        r = self.rect()
-        radius = r.height() // 2
- 
-        painter.setPen(QPen(self._border_color, 1))
-        painter.setBrush(QBrush(self._track_color))
-        painter.drawRoundedRect(r, radius, radius)
- 
-        painter.end()
- 
-    def select_tab(self, index: int):
-        if index == self._selected:
+
+        self._update_styles()
+
+    def _on_tab_clicked(self, name: str):
+        if name == self.active_tab:
             return
-        self._selected = index
-        self._update_appearance()
-        self.tabChanged.emit(index, self._tabs[index])
- 
-    def current_index(self) -> int:
-        return self._selected
- 
-    def current_tab(self) -> str:
-        return self._tabs[self._selected]
- 
-    def set_track_color(self, color: str):
-        self._track_color = QColor(color)
-        self.update()
- 
-    def set_selected_color(self, color: str):
-        self._selected_color = QColor(color)
-        self._update_appearance()
+        self.active_tab = name
+        self._update_styles()
+        self.tab_clicked.emit(self.tab_names_signals_dict[name])
+
+    def set_active_tab(self, name: str):
+        """Programmatically set the active tab without emitting the signal."""
+        self.active_tab = name
+        self._update_styles()
+
+    def _update_styles(self):
+        active_style = """
+            QPushButton {
+                background-color: white;
+                border-radius: 8px;
+                color: #152238;
+                font-size: 16px;
+                font-weight: 600;
+                padding: 6px 18px;
+            }
+            QPushButton:hover {
+                background-color: #f0ffff;
+            }
+            QPushButton:pressed {
+                background-color: #f0f8ff;
+                padding-top: 2px;
+                padding-left: 2px;
+            }
+            QPushButton:focus {
+                border: 3px solid #4A9EFF;
+                border-radius: 8px;
+            }
+        """
+        inactive_style = """
+            QPushButton {
+                background-color: #d3d3d3;
+                border-radius: 8px;
+                color: #4a4a4a;
+                font-size: 16px;
+                font-weight: 600;
+                padding: 3px 9px;
+            }
+            QPushButton:hover {
+                background-color: #dcdcdc;
+            }
+            QPushButton:pressed {
+                background-color: #c8c8c8;
+                padding-top: 2px;
+                padding-left: 2px;
+            }
+            QPushButton:focus {
+                border: 3px solid #4A9EFF;
+                border-radius: 8px;
+            }
+        """
+        for name, btn in self.buttons.items():
+            btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)

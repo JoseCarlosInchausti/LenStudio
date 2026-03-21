@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication
-from PyQt6.QtCore import Qt, QUrl,QThread, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QUrl,QThread, pyqtSignal, QEvent, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint
 from PyQt6.QtGui import QPainter, QDesktopServices
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QRectF
@@ -7,7 +7,7 @@ from PyQt6.QtCore import QRectF
 import numpy as np
 import time
 # from Assets import SvgWidget, ImageWidget, InputField, ClickEffectButton
-from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox
+from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar
 from InspectionEngine import Inspection,ThreadImageFetcher
 
 class StudioScreenWidget(QWidget):
@@ -16,6 +16,9 @@ class StudioScreenWidget(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.current_idx = 0
         self.main_window=main_window
+
+        self.animating = False
+        self.current_screen = "inspection"
 
         self.save_csv_worker=None
 
@@ -67,18 +70,102 @@ class StudioScreenWidget(QWidget):
         self.top_panel.add_widget(self.save_status_widget,stretch=(False,True))
         self.top_panel.add_widget(self.system_N_tracker,stretch=(False,True))
 
+        #Clipping widget for animated transitions:
+        self.clipper = QWidget()
+
         for panel,stretch_factor in zip([self.metadata_panel,self.imaging_data_panel,self.inspector_input_panel],(1,3,2)):
             self.panels_layout.addWidget(panel,stretch_factor)
-
+        self.panels_container_widget = QWidget(self.clipper)
+        self.panels_container_widget.setLayout(self.panels_layout)
 
         self.window_layout.addWidget(self.top_panel,1)
-        self.window_layout.addLayout(self.panels_layout,20)
+        # self.window_layout.addWidget(self.panels_container_widget,20)
+        self.window_layout.addWidget(self.clipper, 20)
         self.window_layout.addWidget(self.bottom_panel,2)
+
+        # Settings window:
+        self._create_settings_window()
 
         #Inspection (non-GUI)
         self.current_inspection = Inspection(self.main_window)
         self.current_inspection.simulation_mode = False
         self.CSV_save_path = self.current_inspection.inspection_parameters['save directory']+f'/{self.current_inspection.inspection_parameters['new df name']}.csv'
+
+        # Place-holder of screens for animation:
+        self.screen_name_to_container = {'inspection':self.panels_container_widget, 'settings':self.settings_layout_container_widget}
+        self.screen_orders = {'inspection':0, 'settings':1}
+
+        # self.TEST_switch_screen_button = ClickEffectStyleButton(text='Open Settings')
+        # self.TEST_switch_screen_button.clicked.connect(lambda: self._switch_screens(to_screen='settings'))
+        # self.top_panel.add_widget(self.TEST_switch_screen_button,stretch=(False,False))
+        self.screen_switch_tab_bar = StyledTabBar({'Studio':'inspection','Settings':'settings'})
+        self.screen_switch_tab_bar.tab_clicked.connect(self._switch_screens)
+        self.top_panel.add_widget(self.screen_switch_tab_bar,stretch=(False,False))
+        
+    def _switch_screens(self,to_screen='settings'):
+        if self.animating:
+            return
+        self.to_screen=to_screen
+        self.screen_in, self.screen_out = self.screen_name_to_container[to_screen], self.screen_name_to_container[self.current_screen]
+        self.animating = True
+
+        if self.screen_orders[self.current_screen] < self.screen_orders[to_screen]:
+            out_end = -self.clipper.width()
+            in_start = self.clipper.width()
+        else:
+            out_end = self.clipper.width()
+            in_start = -self.clipper.width()
+
+        anim_out = QPropertyAnimation(self.screen_out, b"pos")
+        anim_out.setDuration(400)
+        anim_out.setStartValue(QPoint(0, 0))
+        anim_out.setEndValue(QPoint(out_end, 0))
+        anim_out.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+        self.screen_in.move(self.clipper.width(), 0)
+        anim_in = QPropertyAnimation(self.screen_in, b"pos")
+        anim_in.setDuration(400)
+        anim_in.setStartValue(QPoint(in_start, 0))
+        anim_in.setEndValue(QPoint(0, 0))
+        anim_in.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+        self.slide_group = QParallelAnimationGroup()
+        self.slide_group.addAnimation(anim_out)
+        self.slide_group.addAnimation(anim_in)
+        self.slide_group.finished.connect(self._on_slide_finished)
+        self.slide_group.start()
+
+    def _on_slide_finished(self):
+        # self.screen_out.hide()
+        self.animating = False
+        self.current_screen = self.to_screen
+
+    def _create_settings_window(self):
+        self.settings_layout = QHBoxLayout()
+        self.settings_left_panel = Panel()
+        self.settings_left_panel.add_title(title='Options',center_title=False)
+        self.settings_layout.addWidget(self.settings_left_panel,1)
+        self.settings_right_panel = Panel()
+        self.settings_right_panel.add_title(title='',center_title=False)
+        self.settings_layout.addWidget(self.settings_right_panel,5)
+        self.settings_layout_container_widget=QWidget(self.clipper)
+        self.settings_layout_container_widget.setLayout(self.settings_layout)
+        self.settings_layout_container_widget.setGeometry(
+                                                self.clipper.width(), 0,
+                                                self.clipper.width(), self.clipper.height()
+                                            )
+        
+    def resizeEvent(self, event):
+        '''
+        Rewrites the resizeEvent function to set the size of the clipper widget for animations
+        Also sets the settings layout out-of-screen
+        '''
+        super().resizeEvent(event)
+        self.panels_container_widget.setGeometry(self.clipper.rect())
+        self.settings_layout_container_widget.setGeometry(
+            self.clipper.width(), 0,
+            self.clipper.width(), self.clipper.height()
+        )
 
     def set_up_inspection_layout(self):
         #Images:
