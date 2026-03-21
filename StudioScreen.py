@@ -95,9 +95,6 @@ class StudioScreenWidget(QWidget):
         self.screen_name_to_container = {'inspection':self.panels_container_widget, 'settings':self.settings_layout_container_widget}
         self.screen_orders = {'inspection':0, 'settings':1}
 
-        # self.TEST_switch_screen_button = ClickEffectStyleButton(text='Open Settings')
-        # self.TEST_switch_screen_button.clicked.connect(lambda: self._switch_screens(to_screen='settings'))
-        # self.top_panel.add_widget(self.TEST_switch_screen_button,stretch=(False,False))
         self.screen_switch_tab_bar = StyledTabBar({'Studio':'inspection','Settings':'settings'})
         self.screen_switch_tab_bar.tab_clicked.connect(self._switch_screens)
         self.top_panel.add_widget(self.screen_switch_tab_bar,stretch=(False,False))
@@ -122,6 +119,20 @@ class StudioScreenWidget(QWidget):
         anim_out.setEndValue(QPoint(out_end, 0))
         anim_out.setEasingCurve(QEasingCurve.Type.InOutCubic)
 
+        animate_bottom_panel=(self.current_screen == 'inspection' or to_screen == 'inspection')
+
+        if animate_bottom_panel:
+            anim_bottom = QPropertyAnimation(self.bottom_panel, b"maximumHeight")
+            anim_bottom.setDuration(400)
+            anim_bottom.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            bottom_height = self.bottom_panel.sizeHint().height()
+            if self.current_screen=='inspection':
+                anim_bottom.setStartValue(bottom_height)
+                anim_bottom.setEndValue(0)
+            else:
+                anim_bottom.setStartValue(0)
+                anim_bottom.setEndValue(bottom_height)
+
         self.screen_in.move(self.clipper.width(), 0)
         anim_in = QPropertyAnimation(self.screen_in, b"pos")
         anim_in.setDuration(400)
@@ -132,6 +143,10 @@ class StudioScreenWidget(QWidget):
         self.slide_group = QParallelAnimationGroup()
         self.slide_group.addAnimation(anim_out)
         self.slide_group.addAnimation(anim_in)
+        if animate_bottom_panel:
+            self.slide_group.addAnimation(anim_bottom)
+            self.system_N_tracker.hide()
+            self.save_status_widget.hide()
         self.slide_group.finished.connect(self._on_slide_finished)
         self.slide_group.start()
 
@@ -139,6 +154,10 @@ class StudioScreenWidget(QWidget):
         # self.screen_out.hide()
         self.animating = False
         self.current_screen = self.to_screen
+        if self.to_screen == 'inspection':
+            self.bottom_panel.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
+            self.system_N_tracker.show()
+            self.save_status_widget.show()
 
     def _create_settings_window(self):
         self.settings_layout = QHBoxLayout()
@@ -150,10 +169,10 @@ class StudioScreenWidget(QWidget):
         self.settings_layout.addWidget(self.settings_right_panel,5)
         self.settings_layout_container_widget=QWidget(self.clipper)
         self.settings_layout_container_widget.setLayout(self.settings_layout)
-        self.settings_layout_container_widget.setGeometry(
-                                                self.clipper.width(), 0,
-                                                self.clipper.width(), self.clipper.height()
-                                            )
+        # self.settings_layout_container_widget.setGeometry(
+        #                                         self.clipper.width(), 0,
+        #                                         self.clipper.width(), self.clipper.height()
+        #                                     )
         
     def resizeEvent(self, event):
         '''
@@ -164,7 +183,7 @@ class StudioScreenWidget(QWidget):
         self.panels_container_widget.setGeometry(self.clipper.rect())
         self.settings_layout_container_widget.setGeometry(
             self.clipper.width(), 0,
-            self.clipper.width(), self.clipper.height()
+            self.clipper.width(), self.clipper.height()+self.bottom_panel.height()
         )
 
     def set_up_inspection_layout(self):
@@ -344,13 +363,6 @@ class StudioScreenWidget(QWidget):
 
     def inform_failure_saving_CSV(self):
         self.save_status_widget.set_status(color='red', text='Autosaving failed')
-
-    # def eventFilter(self, obj, event):
-    #     if event.type() == QEvent.Type.KeyPress and self.quick_inspection_activated:
-    #         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
-    #             self._advance_focus()
-    #             return True  # we handled it, don't pass it to the field
-    #     return super().eventFilter(obj, event)  # everything else behaves normally
     
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.FocusIn and self.quick_inspection_activated:
