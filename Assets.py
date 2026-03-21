@@ -630,7 +630,7 @@ class StyledToggleSwitch(QCheckBox):
 class StyledTabBar(QWidget):
     tab_clicked = pyqtSignal(str)  # emits the name of the clicked tab
 
-    def __init__(self, tab_names: dict, parent=None):
+    def __init__(self, tab_names: dict, orientation='horizontal',add_stretches=False,parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("""
@@ -645,18 +645,25 @@ class StyledTabBar(QWidget):
         self.active_tab = self.tab_names[0]
         self.buttons = {}
 
-        layout = QHBoxLayout()
+        if orientation=='horizontal':
+            layout = QHBoxLayout()
+        elif orientation=='vertical':
+            layout = QVBoxLayout()
+
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
         self.setLayout(layout)
 
-        for name in tab_names:
+        for tab_n,name in enumerate(tab_names):
             btn = QPushButton(name)
             btn.setCheckable(False)
             btn.clicked.connect(lambda checked, n=name: self._on_tab_clicked(n))
             self.buttons[name] = btn
             layout.addWidget(btn)
-
+            if add_stretches and tab_n<len(tab_names)-1:
+                layout.addStretch()
+        if orientation == 'vertical' and add_stretches:
+            layout.addStretch()
         self._update_styles()
 
     def _on_tab_clicked(self, name: str):

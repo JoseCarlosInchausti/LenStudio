@@ -161,18 +161,23 @@ class StudioScreenWidget(QWidget):
 
     def _create_settings_window(self):
         self.settings_layout = QHBoxLayout()
+
         self.settings_left_panel = Panel()
         self.settings_left_panel.add_title(title='Options',center_title=False)
         self.settings_layout.addWidget(self.settings_left_panel,1)
+
         self.settings_right_panel = Panel()
         self.settings_right_panel.add_title(title='',center_title=False)
         self.settings_layout.addWidget(self.settings_right_panel,5)
+
         self.settings_layout_container_widget=QWidget(self.clipper)
         self.settings_layout_container_widget.setLayout(self.settings_layout)
-        # self.settings_layout_container_widget.setGeometry(
-        #                                         self.clipper.width(), 0,
-        #                                         self.clipper.width(), self.clipper.height()
-        #                                     )
+
+        #Populate the panels:
+        self.settings_menu_tabs = StyledTabBar({'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'},
+                                               orientation='vertical',
+                                               add_stretches=True)
+        self.settings_left_panel.add_widget(self.settings_menu_tabs)
         
     def resizeEvent(self, event):
         '''
