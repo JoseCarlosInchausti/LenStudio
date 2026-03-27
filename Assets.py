@@ -294,6 +294,8 @@ class Panel(QFrame):
         
         self.layout.addWidget(self.title_widget, alignment=Qt.AlignmentFlag.AlignTop)
         # self.layout.addStretch()
+    def change_title(self,new_title):
+        self.title_widget.setText(new_title)
 
     def add_widget(self,new_widget,stretch=(True,True)):
         if stretch[0]:
@@ -645,9 +647,11 @@ class StyledTabBar(QWidget):
         self.active_tab = self.tab_names[0]
         self.buttons = {}
 
-        if orientation=='horizontal':
+        self.orientation=orientation
+
+        if self.orientation=='horizontal':
             layout = QHBoxLayout()
-        elif orientation=='vertical':
+        elif self.orientation=='vertical':
             layout = QVBoxLayout()
 
         layout.setContentsMargins(8, 6, 8, 6)
@@ -679,28 +683,52 @@ class StyledTabBar(QWidget):
         self._update_styles()
 
     def _update_styles(self):
-        active_style = """
-            QPushButton {
-                background-color: white;
-                border-radius: 8px;
-                color: #152238;
-                font-size: 16px;
-                font-weight: 600;
-                padding: 6px 18px;
-            }
-            QPushButton:hover {
-                background-color: #f0ffff;
-            }
-            QPushButton:pressed {
-                background-color: #f0f8ff;
-                padding-top: 2px;
-                padding-left: 2px;
-            }
-            QPushButton:focus {
-                border: 3px solid #4A9EFF;
-                border-radius: 8px;
-            }
-        """
+        if self.orientation=='horizontal':
+            active_style = """
+                QPushButton {
+                    background-color: white;
+                    border-radius: 8px;
+                    color: #152238;
+                    font-size: 16px;
+                    font-weight: 600;
+                    padding: 6px 18px;
+                }
+                QPushButton:hover {
+                    background-color: #f0ffff;
+                }
+                QPushButton:pressed {
+                    background-color: #f0f8ff;
+                    padding-top: 2px;
+                    padding-left: 2px;
+                }
+                QPushButton:focus {
+                    border: 3px solid #4A9EFF;
+                    border-radius: 8px;
+                }
+            """
+        else:
+            active_style = """
+                QPushButton {
+                    background-color: white;
+                    border-radius: 8px;
+                    color: #152238;
+                    font-size: 16px;
+                    font-weight: 600;
+                    padding: 3px 9px;
+                }
+                QPushButton:hover {
+                    background-color: #f0ffff;
+                }
+                QPushButton:pressed {
+                    background-color: #f0f8ff;
+                    padding-top: 2px;
+                    padding-left: 2px;
+                }
+                QPushButton:focus {
+                    border: 3px solid #4A9EFF;
+                    border-radius: 8px;
+                }
+            """   
         inactive_style = """
             QPushButton {
                 background-color: #d3d3d3;

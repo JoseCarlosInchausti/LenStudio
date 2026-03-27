@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication, QStackedWidget,QLabel
 from PyQt6.QtCore import Qt, QUrl,QThread, pyqtSignal, QEvent, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint
 from PyQt6.QtGui import QPainter, QDesktopServices
 from PyQt6.QtSvg import QSvgRenderer
@@ -160,6 +160,14 @@ class StudioScreenWidget(QWidget):
             self.save_status_widget.show()
 
     def _create_settings_window(self):
+        '''
+        To add a setting, add item to self.dict_of_settings_menus and self.settings_menus_to_functions_dict.
+        Also create a function to populate the new window
+        '''
+        self.dict_of_settings_menus = {'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'}
+        self.settings_menus_to_functions_dict={'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'}
+        self.list_settings_menus_names = list(self.dict_of_settings_menus.keys())
+    
         self.settings_layout = QHBoxLayout()
 
         self.settings_left_panel = Panel()
@@ -167,18 +175,36 @@ class StudioScreenWidget(QWidget):
         self.settings_layout.addWidget(self.settings_left_panel,1)
 
         self.settings_right_panel = Panel()
-        self.settings_right_panel.add_title(title='',center_title=False)
+        self.settings_right_panel.add_title(title=self.list_settings_menus_names[0]+' Settings',center_title=False)
         self.settings_layout.addWidget(self.settings_right_panel,5)
+        self.stacked_settings_widget = QStackedWidget()
+        self.settings_right_panel.add_widget(self.stacked_settings_widget)
 
         self.settings_layout_container_widget=QWidget(self.clipper)
         self.settings_layout_container_widget.setLayout(self.settings_layout)
 
         #Populate the panels:
-        self.settings_menu_tabs = StyledTabBar({'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'},
+        self.settings_menu_tabs = StyledTabBar(self.dict_of_settings_menus,
                                                orientation='vertical',
                                                add_stretches=True)
-        self.settings_left_panel.add_widget(self.settings_menu_tabs)
+        self.settings_menu_tabs.tab_clicked.connect(self._switch_setting_menu)
+        self._populate_settings() #Populates the right panel
+        self.settings_left_panel.add_widget(self.settings_menu_tabs,stretch=(False,True))
         
+    def _populate_settings(self):
+        for menu_name, menu_i in self.dict_of_settings_menus.items():
+            self.temp_widget=QWidget()
+            self.host_layout=QVBoxLayout()
+            # self.host_layout.addWidget(QLabel(f'test {menu_name}'))
+            self.temp_widget.setLayout(self.host_layout)
+            self.stacked_settings_widget.addWidget(self.temp_widget)
+        self.stacked_settings_widget.setCurrentIndex(0)
+
+    def _switch_setting_menu(self,new_menu_index):
+        new_menu_index=int(new_menu_index)
+        self.settings_right_panel.change_title(self.list_settings_menus_names[new_menu_index]+' Settings')
+        self.stacked_settings_widget.setCurrentIndex(new_menu_index)
+
     def resizeEvent(self, event):
         '''
         Rewrites the resizeEvent function to set the size of the clipper widget for animations
