@@ -1,0 +1,9 @@
+{
+    "caplock_grades":"TRUE",
+    "require_grade":"TRUE",
+    "only_pre_defined_grades":"TRUE",
+    "list_of_allowed_grades":["A","B"],
+    "caplock_comments":"TRUE",
+    "require_comment":"TRUE",
+    "test_checkbox":"TRUE"
+}

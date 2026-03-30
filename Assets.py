@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
@@ -6,6 +6,7 @@ from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
+import json
 
 class CheckBox():
     def __init__(self,text,main_window,background_color=None):
@@ -753,3 +754,33 @@ class StyledTabBar(QWidget):
         """
         for name, btn in self.buttons.items():
             btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)
+
+
+def pupulate_settings_from_json(desing_file, config_file):
+    tabs_names = desing_file
+
+class InspectionSettings:
+    def __init__(self,desing_file_path, config_file_path):
+        self.desing_file_path, self.config_file_path = desing_file_path, config_file_path
+
+        #Get design of menus
+        with open(desing_file_path,'r') as design_file:
+            self.desing_file_json = json.load(design_file)
+        #Get configuration file
+        with open(config_file_path,'r') as config_file:
+            self.config_file_json = json.load(config_file)
+
+        self.tabs_names = list(self.desing_file_json['tabs'].keys())
+
+    def get_stacked_widget(self):
+        self.stacked_settings_widget = QStackedWidget()
+
+        for menu_name in self.tabs_names:
+            temp_widget=QWidget()
+            host_layout=QVBoxLayout()
+            #Add function to populate settings
+            temp_widget.setLayout(host_layout)
+            self.stacked_settings_widget.addWidget(temp_widget)
+        self.stacked_settings_widget.setCurrentIndex(0)
+
+        return self.stacked_settings_widget

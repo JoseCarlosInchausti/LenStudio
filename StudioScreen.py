@@ -7,13 +7,16 @@ from PyQt6.QtCore import QRectF
 import numpy as np
 import time
 # from Assets import SvgWidget, ImageWidget, InputField, ClickEffectButton
-from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar
+from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar,InspectionSettings
 from InspectionEngine import Inspection,ThreadImageFetcher
 
 class StudioScreenWidget(QWidget):
     def __init__(self,main_window):
         super().__init__()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        self.Settings = InspectionSettings("JSON-for-settings-design-format.txt", "settings-state.txt")
+
         self.current_idx = 0
         self.main_window=main_window
 
@@ -160,12 +163,7 @@ class StudioScreenWidget(QWidget):
             self.save_status_widget.show()
 
     def _create_settings_window(self):
-        '''
-        To add a setting, add item to self.dict_of_settings_menus and self.settings_menus_to_functions_dict.
-        Also create a function to populate the new window
-        '''
-        self.dict_of_settings_menus = {'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'}
-        self.settings_menus_to_functions_dict={'Imaging Data':'0', 'Grades and Comments':'1','Quick Inspection':'2','Info':'3'}
+        self.dict_of_settings_menus = {tab_name:str(int(tab_i)) for tab_i, tab_name in enumerate(self.Settings.tabs_names)}
         self.list_settings_menus_names = list(self.dict_of_settings_menus.keys())
     
         self.settings_layout = QHBoxLayout()
@@ -177,7 +175,7 @@ class StudioScreenWidget(QWidget):
         self.settings_right_panel = Panel()
         self.settings_right_panel.add_title(title=self.list_settings_menus_names[0]+' Settings',center_title=False)
         self.settings_layout.addWidget(self.settings_right_panel,5)
-        self.stacked_settings_widget = QStackedWidget()
+        self.stacked_settings_widget = self.Settings.get_stacked_widget()
         self.settings_right_panel.add_widget(self.stacked_settings_widget)
 
         self.settings_layout_container_widget=QWidget(self.clipper)
@@ -188,17 +186,7 @@ class StudioScreenWidget(QWidget):
                                                orientation='vertical',
                                                add_stretches=True)
         self.settings_menu_tabs.tab_clicked.connect(self._switch_setting_menu)
-        self._populate_settings() #Populates the right panel
         self.settings_left_panel.add_widget(self.settings_menu_tabs,stretch=(False,True))
-        
-    def _populate_settings(self):
-        for menu_name, menu_i in self.dict_of_settings_menus.items():
-            self.temp_widget=QWidget()
-            self.host_layout=QVBoxLayout()
-            # self.host_layout.addWidget(QLabel(f'test {menu_name}'))
-            self.temp_widget.setLayout(self.host_layout)
-            self.stacked_settings_widget.addWidget(self.temp_widget)
-        self.stacked_settings_widget.setCurrentIndex(0)
 
     def _switch_setting_menu(self,new_menu_index):
         new_menu_index=int(new_menu_index)

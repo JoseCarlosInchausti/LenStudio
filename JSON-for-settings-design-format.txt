@@ -1,0 +1,60 @@
+{
+    "tabs": {
+            "Grades and Comments":{
+                "Grades":[
+                    {
+                        "type":"checkmark",
+                        "label":"Always capitalize grades",
+                        "caption":"LenStudio will automatically capitalize grades",
+                        "name":"caplock_grades"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Show warning for missing grades",
+                        "caption":"A warning will be shown when changing system without entering a grade",
+                        "name":"require_grade"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Only allow pre-defined grades",
+                        "name":"only_pre_defined_grades",
+                        "caption":"Only grades declared below will be allowed during inspection (Note: grades are case-sensitive)"
+                    },
+                    {
+                        "type":"editable list",
+                        "label":"Create list of allowed grades",
+                        "name":"list_of_allowed_grades",
+                        "activate if checked":"only_pre_defined_grades"
+                    }
+                ],
+                "Comments":[
+                    {
+                        "type":"checkmark",
+                        "label":"Always capitalize comments",
+                        "caption":"LenStudio will automatically capitalize comments",
+                        "name":"caplock_comments"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Show warning for missing comment",
+                        "caption":"A warning will be shown when changing system without entering a comment",
+                        "name":"require_comment"
+                    }
+                ]
+        },
+        "Quick Inspection":{
+            "Test": [
+                {
+                    "type":"checkmark",
+                    "label":"Test label",
+                    "caption":"Test caption",
+                    "name":"test_checkbox"
+                }
+            ]
+        }
+    }
+}
+
+
+
+        
