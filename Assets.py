@@ -7,6 +7,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
 import json
+import SettingsAssets
 
 class CheckBox():
     def __init__(self,text,main_window,background_color=None):
@@ -756,8 +757,49 @@ class StyledTabBar(QWidget):
             btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)
 
 
-def pupulate_settings_from_json(desing_file, config_file):
-    tabs_names = desing_file
+class StyledGroupBox(QGroupBox):
+    def __init__(self, title, vertical=True, parent=None):
+        super().__init__(title)
+        if vertical:
+            self.inner_layout = QVBoxLayout(self)
+        else:
+            self.inner_layout = QHBoxLayout(self)
+        self.inner_layout.setContentsMargins(4, 5, 4, 5)
+        self.inner_layout.setSpacing(6)
+        self.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid lightgray;
+                border-radius: 5px;
+                margin-top: 10px;
+                background-color: #152238;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                background-color: #152238;
+                color: lightgray;
+                top: -1px;
+            }
+        """)
+
+    def add_widget(self, widget, stretch=0):
+        self.inner_layout.addWidget(widget, stretch)
+
+    def add_layout(self, layout, stretch=0):
+        self.inner_layout.addLayout(layout, stretch)
+
+    def add_stretch(self):
+        self.inner_layout.addStretch()
+
+    def add_spacing(self, spacing: int):
+        self.inner_layout.addSpacing(spacing)
+
+class StyledEmptyWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("emptyWidget")
+        self.setStyleSheet("QWidget#emptyWidget { background-color: #152238; }")
 
 class InspectionSettings:
     def __init__(self,desing_file_path, config_file_path):
@@ -776,11 +818,47 @@ class InspectionSettings:
         self.stacked_settings_widget = QStackedWidget()
 
         for menu_name in self.tabs_names:
-            temp_widget=QWidget()
+            temp_widget=StyledEmptyWidget()
             host_layout=QVBoxLayout()
             #Add function to populate settings
+            host_layout = self._populate_layout(menu_name,host_layout)
             temp_widget.setLayout(host_layout)
             self.stacked_settings_widget.addWidget(temp_widget)
         self.stacked_settings_widget.setCurrentIndex(0)
 
         return self.stacked_settings_widget
+    
+    def _populate_layout(self,menu_name,host_layout):
+        self.name_to_widget_map={}
+        #Determine if a frame is needed:
+        add_frame=True if type(self.desing_file_json['tabs'][menu_name])==dict else False
+        if add_frame:
+            frames_names_list = list(self.desing_file_json['tabs'][menu_name].keys())
+            for frame_name in frames_names_list:
+                #Create and add frame to host layout
+                frame = StyledGroupBox(title=frame_name)
+                host_layout.addWidget(frame)
+                #Populate frame
+                widgets_infos = self.desing_file_json['tabs'][menu_name][frame_name]
+                for widget_info in widgets_infos:
+                    #Create widget
+                    widget=self._create_widget(widget_info)
+                    if widget:
+                        frame.add_widget(widget)
+        return host_layout
+    
+    def _create_widget(self,widget_info):
+        widget=None
+        if widget_info['type']=='checkmark':
+            widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
+            self.name_to_widget_map[widget_info['name']]=widget.checkbox
+        if widget:
+            return widget
+        else:
+            return
+# "type":"checkmark",
+# "label":"Always capitalize grades",
+# "caption":"LenStudio will automatically capitalize grades",
+# "name":"caplock_grades"
+
+
