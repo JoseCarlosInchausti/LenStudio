@@ -153,6 +153,9 @@ class StudioScreenWidget(QWidget):
         self.slide_group.finished.connect(self._on_slide_finished)
         self.slide_group.start()
 
+        #If leaving settings, update config file
+        self.Settings.update_config_file()
+        
     def _on_slide_finished(self):
         # self.screen_out.hide()
         self.animating = False

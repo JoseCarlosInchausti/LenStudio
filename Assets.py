@@ -814,6 +814,8 @@ class InspectionSettings:
 
         self.tabs_names = list(self.desing_file_json['tabs'].keys())
 
+        self.name_to_widget_map={}
+
     def get_stacked_widget(self):
         self.stacked_settings_widget = QStackedWidget()
 
@@ -828,8 +830,21 @@ class InspectionSettings:
 
         return self.stacked_settings_widget
     
+    def update_config_file(self):
+        all_names = list(self.config_file_json.keys())
+        existing_widgets_names = list(self.name_to_widget_map.keys())
+        for widget_name in all_names:
+            if widget_name in existing_widgets_names:
+                self.config_file_json[widget_name] = self.name_to_widget_map[widget_name].get_status()
+            else:
+                print(f'{widget_name} does not exist in the UI')
+
+        with open(self.config_file_path,'w') as old_config_file:
+            json.dump(self.config_file_json, old_config_file, indent=4)
+
+        print(self.name_to_widget_map)
+
     def _populate_layout(self,menu_name,host_layout):
-        self.name_to_widget_map={}
         #Determine if a frame is needed:
         add_frame=True if type(self.desing_file_json['tabs'][menu_name])==dict else False
         if add_frame:
@@ -845,20 +860,17 @@ class InspectionSettings:
                     widget=self._create_widget(widget_info)
                     if widget:
                         frame.add_widget(widget)
+        host_layout.addStretch()
         return host_layout
     
     def _create_widget(self,widget_info):
         widget=None
         if widget_info['type']=='checkmark':
             widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
-            self.name_to_widget_map[widget_info['name']]=widget.checkbox
+        
+        #Conditional for testing only
         if widget:
+            self.name_to_widget_map[widget_info['name']]=widget
             return widget
         else:
             return
-# "type":"checkmark",
-# "label":"Always capitalize grades",
-# "caption":"LenStudio will automatically capitalize grades",
-# "name":"caplock_grades"
-
-

@@ -11,16 +11,21 @@ class StyledEmptyWidget(QWidget):
         self.setObjectName("emptyWidget")
         self.setStyleSheet("QWidget#emptyWidget { background-color: #152238; }")
 
-
 class Checkbox(StyledEmptyWidget):
     def __init__(self,checkbox_title, checkbox_caption=None):
         super().__init__()
         self.horizontal_layout = QHBoxLayout()
-        self.horizontal_layout.setSpacing(8)
+        # self.horizontal_layout.setSpacing(8)
         checkmark_title_label=QLabel(checkbox_title)
         checkmark_title_label.setStyleSheet("QLabel { color: white; font-size: 14px; }")
         self.checkbox = QCheckBox()
+        self.checkbox.setStyleSheet("""
+                                    QCheckBox {
+                                        background-color: transparent;
+                                    }
+                                    """)
         self.horizontal_layout.addWidget(self.checkbox)
+        self.horizontal_layout.addSpacing(10)
 
         if checkbox_caption:
             labels_layout=QVBoxLayout()
@@ -31,5 +36,8 @@ class Checkbox(StyledEmptyWidget):
             checkmark_caption_label.setStyleSheet("QLabel { color: white; font-size: 10px; }")
         else:
             self.horizontal_layout.addWidget(checkmark_title_label)
-
+        self.horizontal_layout.addStretch()
         self.setLayout(self.horizontal_layout)
+
+    def get_status(self):
+        return self.checkbox.isChecked() 
