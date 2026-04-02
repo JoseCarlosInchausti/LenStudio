@@ -867,9 +867,10 @@ class InspectionSettings:
         widget=None
         if widget_info['type']=='checkmark':
             widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
-        
+            
         #Conditional for testing only
         if widget:
+            widget.set_status(self.config_file_json[widget_info['name']])
             self.name_to_widget_map[widget_info['name']]=widget
             return widget
         else:

@@ -41,3 +41,8 @@ class Checkbox(StyledEmptyWidget):
 
     def get_status(self):
         return self.checkbox.isChecked() 
+    
+    def set_status(self,status):
+        #status is str from json file
+        is_checked=bool(status)
+        self.checkbox.setChecked(is_checked)
