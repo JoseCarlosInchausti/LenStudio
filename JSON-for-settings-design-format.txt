@@ -22,7 +22,8 @@
                     },
                     {
                         "type":"editable list",
-                        "label":"Create list of allowed grades",
+                        "label":"Create list of allowed grades:",
+                        "caption":"Enter new grade",
                         "name":"list_of_allowed_grades",
                         "activate if checked":"only_pre_defined_grades"
                     }

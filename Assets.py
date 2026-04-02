@@ -867,6 +867,8 @@ class InspectionSettings:
         widget=None
         if widget_info['type']=='checkmark':
             widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
+        elif widget_info['type']=='editable list':
+            widget=SettingsAssets.ListWidget(title=widget_info['label'], caption=widget_info['caption'])
             
         #Conditional for testing only
         if widget:

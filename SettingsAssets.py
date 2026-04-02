@@ -11,6 +11,153 @@ class StyledEmptyWidget(QWidget):
         self.setObjectName("emptyWidget")
         self.setStyleSheet("QWidget#emptyWidget { background-color: #152238; }")
 
+class ListWidget(StyledEmptyWidget):
+    items_changed = pyqtSignal(list)
+
+    def __init__(self, initial_items: list = None, max_item_length: int = 4, caption: str = "Enter item...", title=None):
+        super().__init__()
+        self.max_item_length = max_item_length
+        self.items = list(initial_items) if initial_items else []
+
+        outter_layout = QHBoxLayout()
+        outter_layout.addSpacing(30)
+        vertical_layout = QVBoxLayout()
+        outter_layout.addLayout(vertical_layout)
+        vertical_layout.setContentsMargins(0, 0, 0, 0)
+        vertical_layout.setSpacing(6)
+        self.setLayout(outter_layout)
+        #Add title
+        if title:
+            self.title_label=QLabel(title)
+            self.title_label.setStyleSheet("QLabel { color: white; font-size: 14px; }")
+        vertical_layout.addWidget(self.title_label)
+
+        # Input row
+        input_layout = QHBoxLayout()
+        input_layout.setSpacing(6)
+        self.line_edit = QLineEdit()
+        self.line_edit.setPlaceholderText(caption)
+        self.line_edit.setMaxLength(max_item_length)
+        self.line_edit.setFixedWidth(300)
+        self.line_edit.setStyleSheet("""
+                                                    QLineEdit {
+                                                        border: 1px solid lightgray;
+                                                        border-radius: 6px;
+                                                        padding: 4px 8px;
+                                                        background-color: white;
+                                                        color: #152238;
+                                                        font-size: 13px;
+                                                    }
+                                                    QLineEdit:focus {
+                                                        border: 2px solid #4A9EFF;
+                                                    }
+                                                    """)
+        self.line_edit.returnPressed.connect(self._add_item)
+        self.add_button = QPushButton("Add")
+        self.add_button.setStyleSheet("""
+                                        QPushButton {
+                                            background-color: white;
+                                            border-radius: 8px;
+                                            color: #152238;
+                                            font-size: 16px;
+                                            font-weight: 600;
+                                            padding: 6px 18px;
+                                        }
+                                        QPushButton:hover {
+                                            background-color: #f0ffff;
+                                        }
+                                        QPushButton:pressed {
+                                            background-color: #f0f8ff;
+                                            padding-top: 2px;
+                                            padding-left: 2px;
+                                        }""")
+        self.add_button.clicked.connect(self._add_item)
+        input_layout.addWidget(self.line_edit)
+        input_layout.addWidget(self.add_button)
+        input_layout.addStretch()
+        vertical_layout.addLayout(input_layout)
+
+        # Chips area
+        self.chips_widget = QWidget()
+        self.chips_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.chips_layout = QHBoxLayout()
+        self.chips_layout.setContentsMargins(0, 0, 0, 0)
+        self.chips_layout.setSpacing(6)
+        self.chips_widget.setLayout(self.chips_layout)
+        vertical_layout.addWidget(self.chips_widget)
+
+        self._rebuild_chips()
+
+    def _add_item(self):
+        item = self.line_edit.text().strip()
+        if not item or item in self.items:
+            self.line_edit.clear()
+            return
+        self.items.append(item)
+        self.line_edit.clear()
+        self._rebuild_chips()
+        self.items_changed.emit(self.items)
+
+    def _remove_item(self, item: str):
+        if item in self.items:
+            self.items.remove(item)
+            self._rebuild_chips()
+            self.items_changed.emit(self.items)
+
+    def _rebuild_chips(self):
+        while self.chips_layout.count():
+            i = self.chips_layout.takeAt(0)
+            if i.widget():
+                i.widget().deleteLater()
+        for item in self.items:
+            self.chips_layout.addWidget(self._make_chip(item))
+        self.chips_layout.addStretch()
+
+    def _make_chip(self, item: str) -> QWidget:
+        chip = QWidget()
+        chip.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        chip.setObjectName("chip")
+        chip.setStyleSheet("""
+            QWidget#chip {
+                background-color: #4A9EFF;
+                border-radius: 6px;
+            }
+        """)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
+        chip.setLayout(layout)
+
+        label = QLabel(item)
+        label.setStyleSheet("QLabel { color: white; font-size: 13px; font-weight: 600; background-color: transparent; }")
+        remove_btn = QPushButton("×")
+        remove_btn.setFixedSize(16, 16)
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: white;
+                font-size: 13px;
+                font-weight: 600;
+                border: none;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                color: #ffcccc;
+            }
+        """)
+        remove_btn.clicked.connect(lambda: self._remove_item(item))
+
+        layout.addWidget(label)
+        layout.addWidget(remove_btn)
+        return chip
+
+    def get_status(self) -> list:
+        return list(self.items)
+
+    def set_status(self, items: list):
+        self.items = list(items)
+        self._rebuild_chips()
+
 class Checkbox(StyledEmptyWidget):
     def __init__(self,checkbox_title, checkbox_caption=None):
         super().__init__()

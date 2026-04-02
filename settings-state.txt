@@ -1,10 +1,14 @@
 {
     "caplock_grades": false,
     "require_grade": false,
-    "only_pre_defined_grades": false,
+    "only_pre_defined_grades": true,
     "list_of_allowed_grades": [
         "A",
-        "B"
+        "B",
+        "C",
+        "D",
+        "E",
+        "F"
     ],
     "caplock_comments": true,
     "require_comment": true,
