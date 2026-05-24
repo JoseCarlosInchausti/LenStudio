@@ -44,12 +44,18 @@
                 ]
         },
         "Quick Inspection":{
-            "Test": [
+            "Inspection flow": [
                 {
                     "type":"checkmark",
-                    "label":"Test label",
-                    "caption":"Test caption",
-                    "name":"test_checkbox"
+                    "label":"Modify order of selected fields",
+                    "caption":"List and modify the order of fields that will be selected consecutively during Quick Inspection mode.\nAt least one field must be selected.",
+                    "name":"quick_inspection_order"
+                },
+                {
+                    "type":"checkmark",
+                    "label":"Move-forward key",
+                    "caption":"Select from the available keys to move to the next field during Quick Inspection mode.",
+                    "name":"quick_inspection_next_key"
                 }
             ]
         }

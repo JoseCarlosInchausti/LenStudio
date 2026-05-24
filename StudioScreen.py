@@ -7,7 +7,7 @@ from PyQt6.QtCore import QRectF
 import numpy as np
 import time
 # from Assets import SvgWidget, ImageWidget, InputField, ClickEffectButton
-from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar,InspectionSettings
+from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar,InspectionSettings,ScrollPanel
 from InspectionEngine import Inspection,ThreadImageFetcher
 
 class StudioScreenWidget(QWidget):
@@ -175,7 +175,8 @@ class StudioScreenWidget(QWidget):
         self.settings_left_panel.add_title(title='Options',center_title=False)
         self.settings_layout.addWidget(self.settings_left_panel,1)
 
-        self.settings_right_panel = Panel()
+        # self.settings_right_panel = Panel() # Not scrollable
+        self.settings_right_panel = ScrollPanel()
         self.settings_right_panel.add_title(title=self.list_settings_menus_names[0]+' Settings',center_title=False)
         self.settings_layout.addWidget(self.settings_right_panel,5)
         self.stacked_settings_widget = self.Settings.get_stacked_widget()
@@ -308,7 +309,6 @@ class StudioScreenWidget(QWidget):
     
     def activate_deactivate_quick_inspection(self,state):
         if state == Qt.CheckState.Checked.value:
-            print('Quick inspection activated')
             self.quick_inspection_activated=True
             self.focus_order[self.focus_i].setFocus()
         else:

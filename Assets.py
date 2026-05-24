@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
@@ -308,6 +308,77 @@ class Panel(QFrame):
 
     def add_layout(self,new_layout):
         self.layout.addLayout(new_layout)
+
+class ScrollPanel(QFrame):
+    def __init__(self, border_radius=12, vertical=True):
+        super().__init__()
+        self.border_radius = border_radius
+
+        # Outer layout holds the title + scroll area
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+
+        # Scroll area setup
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Inner container widget inside the scroll area
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("background-color: transparent;")
+        if vertical:
+            self.inner_layout = QVBoxLayout(self.scroll_widget)
+        else:
+            self.inner_layout = QHBoxLayout(self.scroll_widget)
+        self.inner_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.layout.addWidget(self.scroll_area)
+
+        self._apply_stylesheet()
+
+    def _apply_stylesheet(self):
+        self.setStyleSheet("""
+            QFrame {{
+                background-color: #152238;
+                border-radius: {r}px;
+                padding: 0px;
+            }}
+            QScrollArea {{
+                background-color: transparent;
+                border: none;
+            }}
+            QLabel#title {{
+                font-size: 18px;
+                font-weight: 600;
+                color: white;
+                padding: 8px;
+            }}
+        """.format(r=self.border_radius))
+
+    def add_title(self, title='No title', center_title=False):
+        self.title_widget = QLabel(title)
+        if center_title:
+            self.title_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_widget.setObjectName('title')
+        # Insert title at position 0, before the scroll area
+        self.layout.insertWidget(0, self.title_widget, alignment=Qt.AlignmentFlag.AlignTop)
+        self._apply_stylesheet()
+
+    def change_title(self, new_title):
+        self.title_widget.setText(new_title)
+
+    def add_widget(self, new_widget, stretch=(True, True)):
+        if stretch[0]:
+            self.inner_layout.addStretch()
+        self.inner_layout.addWidget(new_widget)
+        if stretch[1]:
+            self.inner_layout.addStretch()
+
+    def add_layout(self, new_layout):
+        self.inner_layout.addLayout(new_layout)
 
 class StyledTextBox(QGroupBox):
     def __init__(self, title, content):
