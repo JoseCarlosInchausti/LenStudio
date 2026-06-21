@@ -56,6 +56,13 @@
                     "label":"Move-forward key",
                     "caption":"Select from the available keys to move to the next field during Quick Inspection mode.",
                     "name":"quick_inspection_next_key"
+                },
+                {
+                    "type":"radio select",
+                    "label":"Select move-forward key:",
+                    "name":"quick_inspection_next_key_choice",
+                    "options":["Enter","Tab","Space"],
+                    "activate if checked":"quick_inspection_next_key"
                 }
             ]
         }

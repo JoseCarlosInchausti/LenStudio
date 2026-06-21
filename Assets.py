@@ -949,6 +949,13 @@ class InspectionSettings:
                     widget=self._create_widget(widget_info)
                     if widget:
                         frame.add_widget(widget)
+                        if 'activate if checked' in widget_info:
+                            ctrl = self.name_to_widget_map.get(widget_info['activate if checked'])
+                            if ctrl:
+                                widget.setEnabled(ctrl.get_status())
+                                ctrl.checkbox.stateChanged.connect(
+                                    lambda state, w=widget: w.setEnabled(state == Qt.CheckState.Checked.value)
+                                )
         host_layout.addStretch()
         return host_layout
     
@@ -958,6 +965,8 @@ class InspectionSettings:
             widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
         elif widget_info['type']=='editable list':
             widget=SettingsAssets.ListWidget(title=widget_info['label'], caption=widget_info['caption'])
+        elif widget_info['type']=='radio select':
+            widget=SettingsAssets.RadioSelector(options=widget_info['options'], title=widget_info.get('label'))
             
         #Conditional for testing only
         if widget:

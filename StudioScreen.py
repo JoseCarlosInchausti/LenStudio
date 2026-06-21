@@ -294,6 +294,7 @@ class StudioScreenWidget(QWidget):
         self.grade_input.text_edit.installEventFilter(self)
         self.comment_input = StyledInputBox('{} Comment'.format(grader_name),first_comment_and_grade['comment'],caps_lock=caps_comment)
         self.comment_input.text_edit.installEventFilter(self)
+        self.next_system_button.installEventFilter(self)
         all_input_field_widgets = [self.grade_input, self.comment_input]
 
         #Connect action buttons:
@@ -456,15 +457,31 @@ class StudioScreenWidget(QWidget):
             elif obj == self.comment_input.text_edit:
                 self.comment_input._set_border(with_focus_outline=False)
         if event.type() == QEvent.Type.KeyPress and self.quick_inspection_activated:
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.key() in self._advance_keys():
                 self._advance_focus()
                 return True
         return super().eventFilter(obj, event)
     
+    _KEY_MAP = {
+        'Enter': (Qt.Key.Key_Return, Qt.Key.Key_Enter),
+        'Tab':   (Qt.Key.Key_Tab,),
+        'Space': (Qt.Key.Key_Space,),
+    }
+
+    def _advance_keys(self):
+        if self.Settings.get_setting('quick_inspection_next_key'):
+            choice = self.Settings.get_setting('quick_inspection_next_key_choice') or 'Enter'
+        else:
+            choice = 'Enter'
+        return self._KEY_MAP.get(choice, (Qt.Key.Key_Return, Qt.Key.Key_Enter))
+
     def _advance_focus(self):
-        self.focus_i+=1
-        self.focus_order[self.focus_i].setFocus()
-        print(f'Focus {self.focus_i} shown')
+        if self.focus_i == len(self.focus_order) - 1:
+            if self.next_system_button.isEnabled():
+                self.next_system_button.click()
+        else:
+            self.focus_i += 1
+            self.focus_order[self.focus_i].setFocus()
 
         # self.focus_order = [self.grade_input,self.comment_input,self.next_system_button]
         # self.focus_i = 0

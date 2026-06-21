@@ -158,6 +158,98 @@ class ListWidget(StyledEmptyWidget):
         self.items = list(items)
         self._rebuild_chips()
 
+class RadioSelector(StyledEmptyWidget):
+    selection_changed = pyqtSignal(str)
+
+    def __init__(self, options: list, title: str = None):
+        super().__init__()
+        self.options = options
+        self.selected = options[0] if options else None
+        self.buttons = {}
+
+        outer_layout = QHBoxLayout()
+        outer_layout.addSpacing(30)
+        inner_layout = QVBoxLayout()
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(6)
+        outer_layout.addLayout(inner_layout)
+        self.setLayout(outer_layout)
+
+        if title:
+            title_label = QLabel(title)
+            title_label.setStyleSheet("QLabel { color: white; font-size: 14px; }")
+            inner_layout.addWidget(title_label)
+
+        pills_layout = QHBoxLayout()
+        pills_layout.setSpacing(8)
+        pills_layout.setContentsMargins(0, 0, 0, 0)
+        for option in options:
+            btn = QPushButton(option)
+            btn.setCheckable(False)
+            btn.clicked.connect(lambda checked, o=option: self._select(o))
+            self.buttons[option] = btn
+            pills_layout.addWidget(btn)
+        pills_layout.addStretch()
+        inner_layout.addLayout(pills_layout)
+
+        self._update_styles()
+
+    def _select(self, option: str):
+        self.selected = option
+        self._update_styles()
+        self.selection_changed.emit(option)
+
+    def _update_styles(self):
+        for option, btn in self.buttons.items():
+            if option == self.selected:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4A9EFF;
+                        border-radius: 8px;
+                        color: white;
+                        font-size: 14px;
+                        font-weight: 600;
+                        padding: 4px 18px;
+                        border: none;
+                    }
+                    QPushButton:disabled {
+                        background-color: #2a3a52;
+                        color: #556677;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #2a3a52;
+                        border-radius: 8px;
+                        color: #aaaaaa;
+                        font-size: 14px;
+                        font-weight: 600;
+                        padding: 4px 18px;
+                        border: 1px solid #3a4a62;
+                    }
+                    QPushButton:hover {
+                        background-color: #3a4a62;
+                        color: white;
+                    }
+                    QPushButton:disabled {
+                        background-color: #1c2840;
+                        color: #445566;
+                        border-color: #2a3548;
+                    }
+                """)
+
+    def get_status(self) -> str:
+        return self.selected
+
+    def set_status(self, value: str):
+        if value in self.options:
+            self.selected = value
+        else:
+            self.selected = self.options[0] if self.options else None
+        self._update_styles()
+
+
 class Checkbox(StyledEmptyWidget):
     def __init__(self,checkbox_title, checkbox_caption=None):
         super().__init__()
