@@ -624,6 +624,19 @@ class StyledInputBox(QGroupBox):
     def setFocus(self):
         self.text_edit.setFocus()
 
+    def set_caps_lock(self, enabled: bool):
+        if enabled == self.caps_lock:
+            return
+        self.caps_lock = enabled
+        if enabled:
+            self.text_edit.textChanged.connect(self._force_uppercase)
+            self._force_uppercase()
+        else:
+            try:
+                self.text_edit.textChanged.disconnect(self._force_uppercase)
+            except RuntimeError:
+                pass
+
 class StatusLED(QWidget):
     COLORS = {"red":'#e74c3c',
               "yellow":'#f39c12',
@@ -901,6 +914,11 @@ class InspectionSettings:
 
         return self.stacked_settings_widget
     
+    def get_setting(self, name):
+        if name in self.name_to_widget_map:
+            return self.name_to_widget_map[name].get_status()
+        return self.config_file_json.get(name)
+
     def update_config_file(self):
         all_names = list(self.config_file_json.keys())
         existing_widgets_names = list(self.name_to_widget_map.keys())

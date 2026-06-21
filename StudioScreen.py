@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication, QStackedWidget,QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication, QStackedWidget,QLabel,QMessageBox
 from PyQt6.QtCore import Qt, QUrl,QThread, pyqtSignal, QEvent, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint
 from PyQt6.QtGui import QPainter, QDesktopServices
 from PyQt6.QtSvg import QSvgRenderer
@@ -164,6 +164,7 @@ class StudioScreenWidget(QWidget):
             self.bottom_panel.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
             self.system_N_tracker.show()
             self.save_status_widget.show()
+            self._apply_caps_lock_settings()
 
     def _create_settings_window(self):
         self.dict_of_settings_menus = {tab_name:str(int(tab_i)) for tab_i, tab_name in enumerate(self.Settings.tabs_names)}
@@ -286,10 +287,12 @@ class StudioScreenWidget(QWidget):
         # Inspector input fields (custom might be added later):
         grader_name = metadata['grader name']
         first_comment_and_grade = self.current_inspection.get_current_comment_and_grade()
-        self.grade_input = StyledInputBox('{} Grade'.format(grader_name),first_comment_and_grade['grade'],caps_lock=True,N_max_lines=1, center_text=True)
+        caps_grade = bool(self.Settings.get_setting('caplock_grades'))
+        caps_comment = bool(self.Settings.get_setting('caplock_comments'))
+        self.grade_input = StyledInputBox('{} Grade'.format(grader_name),first_comment_and_grade['grade'],caps_lock=caps_grade,N_max_lines=1, center_text=True)
         self.grade_input.change_input_size(30)
         self.grade_input.text_edit.installEventFilter(self)
-        self.comment_input = StyledInputBox('{} Comment'.format(grader_name),first_comment_and_grade['comment'])
+        self.comment_input = StyledInputBox('{} Comment'.format(grader_name),first_comment_and_grade['comment'],caps_lock=caps_comment)
         self.comment_input.text_edit.installEventFilter(self)
         all_input_field_widgets = [self.grade_input, self.comment_input]
 
@@ -322,7 +325,60 @@ class StudioScreenWidget(QWidget):
             for field in [self.grade_input,self.comment_input]:
                 field.enable_input()
     
+    def _warn(self, title, text, confirm=False):
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStyleSheet("""
+            QMessageBox { background-color: black; }
+            QLabel { color: white; font-size: 14px; }
+            QPushButton {
+                background-color: white;
+                color: #152238;
+                border-radius: 6px;
+                padding: 4px 14px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background-color: #f0ffff; }
+        """)
+        if confirm:
+            msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        else:
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        return msg.exec()
+
+    def _apply_caps_lock_settings(self):
+        self.grade_input.set_caps_lock(bool(self.Settings.get_setting('caplock_grades')))
+        self.comment_input.set_caps_lock(bool(self.Settings.get_setting('caplock_comments')))
+
+    def _validate_navigation(self):
+        grade = self.grade_input.get_content().strip()
+        comment = self.comment_input.get_content().strip()
+
+        if self.Settings.get_setting('require_grade') and not grade:
+            reply = self._warn('Missing Grade',
+                'No grade has been entered for this system. Continue anyway?', confirm=True)
+            if reply == QMessageBox.StandardButton.No:
+                return False
+
+        if self.Settings.get_setting('only_pre_defined_grades') and grade:
+            allowed = self.Settings.get_setting('list_of_allowed_grades')
+            if allowed and grade not in allowed:
+                self._warn('Invalid Grade',
+                    f'"{grade}" is not an allowed grade.\nAllowed grades: {", ".join(allowed)}')
+                return False
+
+        if self.Settings.get_setting('require_comment') and not comment:
+            reply = self._warn('Missing Comment',
+                'No comment has been entered for this system. Continue anyway?', confirm=True)
+            if reply == QMessageBox.StandardButton.No:
+                return False
+
+        return True
+
     def load_next_system(self):
+        if not self._validate_navigation():
+            return
         self.current_inspection.update_df({'grade':self.grade_input.get_content(), 'comment':self.comment_input.get_content()})
         self.current_inspection.df_has_been_modified=True
         self.trigger_csv_save_thread()
@@ -337,6 +393,8 @@ class StudioScreenWidget(QWidget):
             self.focus_i=0
 
     def load_previous_system(self):
+        if not self._validate_navigation():
+            return
         self.current_inspection.update_df({'grade':self.grade_input.get_content(), 'comment':self.comment_input.get_content()})
         if self.current_idx == self.N_total_systems-1:
             self.next_system_button.setEnabled(True)
