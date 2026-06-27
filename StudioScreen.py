@@ -165,6 +165,7 @@ class StudioScreenWidget(QWidget):
             self.system_N_tracker.show()
             self.save_status_widget.show()
             self._apply_caps_lock_settings()
+            self._rebuild_focus_order()
 
     def _create_settings_window(self):
         self.dict_of_settings_menus = {tab_name:str(int(tab_i)) for tab_i, tab_name in enumerate(self.Settings.tabs_names)}
@@ -297,10 +298,15 @@ class StudioScreenWidget(QWidget):
         self.next_system_button.installEventFilter(self)
         all_input_field_widgets = [self.grade_input, self.comment_input]
 
+        #Register fields with the drag-order widget (must happen after inputs are created)
+        order_widget = self.Settings.name_to_widget_map.get('quick_inspection_field_order')
+        if order_widget:
+            order_widget.set_available_fields(['Grade', 'Comment'])
+
         #Connect action buttons:
         self.quick_inspection_activated=False
-        self.focus_order = [self.grade_input,self.comment_input,self.next_system_button]
         self.focus_i = 0
+        self._rebuild_focus_order()
         self.quick_inspection_checkbox.checkbox.stateChanged.connect(self.activate_deactivate_quick_inspection)
         self.lock_inspection_checkbox.checkbox.stateChanged.connect(self.lock_unlock_comments_and_grades)
 
@@ -347,6 +353,13 @@ class StudioScreenWidget(QWidget):
         else:
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         return msg.exec()
+
+    def _rebuild_focus_order(self):
+        field_map = {'Grade': self.grade_input, 'Comment': self.comment_input}
+        field_order = self.Settings.get_setting('quick_inspection_field_order') or []
+        ordered = [field_map[f] for f in field_order if f in field_map]
+        self.focus_order = (ordered if ordered else list(field_map.values())) + [self.next_system_button]
+        self.focus_i = 0
 
     def _apply_caps_lock_settings(self):
         self.grade_input.set_caps_lock(bool(self.Settings.get_setting('caplock_grades')))

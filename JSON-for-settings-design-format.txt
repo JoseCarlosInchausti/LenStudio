@@ -46,10 +46,13 @@
         "Quick Inspection":{
             "Inspection flow": [
                 {
-                    "type":"checkmark",
+                    "type":"section label",
                     "label":"Modify order of selected fields",
-                    "caption":"List and modify the order of fields that will be selected consecutively during Quick Inspection mode.\nAt least one field must be selected.",
-                    "name":"quick_inspection_order"
+                    "caption":"List and modify the order of fields that will be selected consecutively during Quick Inspection mode.\nAt least one field must be selected."
+                },
+                {
+                    "type":"drag order list",
+                    "name":"quick_inspection_field_order"
                 },
                 {
                     "type":"checkmark",

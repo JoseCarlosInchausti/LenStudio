@@ -6,7 +6,10 @@
     "caplock_comments": false,
     "require_comment": false,
     "test_checkbox": false,
-    "quick_inspection_order": false,
     "quick_inspection_next_key": true,
-    "quick_inspection_next_key_choice": "Space"
+    "quick_inspection_next_key_choice": "Space",
+    "quick_inspection_field_order": [
+        "Grade",
+        "Comment"
+    ]
 }

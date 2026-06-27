@@ -967,11 +967,15 @@ class InspectionSettings:
             widget=SettingsAssets.ListWidget(title=widget_info['label'], caption=widget_info['caption'])
         elif widget_info['type']=='radio select':
             widget=SettingsAssets.RadioSelector(options=widget_info['options'], title=widget_info.get('label'))
-            
-        #Conditional for testing only
+        elif widget_info['type']=='drag order list':
+            widget=SettingsAssets.DraggableOrderList()
+        elif widget_info['type']=='section label':
+            widget=SettingsAssets.SectionLabel(widget_info['label'], widget_info.get('caption'))
+
         if widget:
-            widget.set_status(self.config_file_json[widget_info['name']])
-            self.name_to_widget_map[widget_info['name']]=widget
+            if 'name' in widget_info:
+                widget.set_status(self.config_file_json[widget_info['name']])
+                self.name_to_widget_map[widget_info['name']]=widget
             return widget
         else:
             return

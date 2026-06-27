@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QListWidgetItem,QAbstractItemView,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
@@ -157,6 +157,145 @@ class ListWidget(StyledEmptyWidget):
     def set_status(self, items: list):
         self.items = list(items)
         self._rebuild_chips()
+
+class SectionLabel(StyledEmptyWidget):
+    def __init__(self, label: str, caption: str = None):
+        super().__init__()
+        # 30px left spacer aligns with labels in checkbox widgets — use this
+        # pattern for any widget that has no checkbox on its left side.
+        outer_layout = QHBoxLayout()
+        outer_layout.addSpacing(30)
+        inner_layout = QVBoxLayout()
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(2)
+        outer_layout.addLayout(inner_layout)
+        self.setLayout(outer_layout)
+
+        title = QLabel(label)
+        title.setStyleSheet("QLabel { color: white; font-size: 14px; }")
+        inner_layout.addWidget(title)
+
+        if caption:
+            cap = QLabel(caption)
+            cap.setStyleSheet("QLabel { color: #aaaaaa; font-size: 11px; }")
+            cap.setWordWrap(True)
+            inner_layout.addWidget(cap)
+
+
+class DraggableOrderList(StyledEmptyWidget):
+    order_changed = pyqtSignal(list)
+
+    def __init__(self):
+        super().__init__()
+        self._available_fields = []
+        self._saved_order = []
+
+        outer_layout = QHBoxLayout()
+        outer_layout.addSpacing(30)
+        inner_layout = QVBoxLayout()
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(4)
+        outer_layout.addLayout(inner_layout)
+        self.setLayout(outer_layout)
+
+        hint = QLabel("Drag to reorder  ·  uncheck to exclude from cycle")
+        hint.setStyleSheet("QLabel { color: #888888; font-size: 11px; }")
+        inner_layout.addWidget(hint)
+
+        first_label = QLabel("↑ First")
+        last_label = QLabel("↓ Last")
+        for lbl in (first_label, last_label):
+            lbl.setStyleSheet("QLabel { color: #666666; font-size: 11px; }")
+        inner_layout.addWidget(first_label)
+        inner_layout.addWidget(last_label)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.list_widget.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list_widget.setSpacing(2)
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                background-color: #0f1c33;
+                border: 1px solid #3a4a62;
+                border-radius: 6px;
+                color: white;
+                font-size: 14px;
+                padding: 4px;
+            }
+            QListWidget::item {
+                padding: 6px 4px;
+                border-radius: 4px;
+            }
+            QListWidget::item:selected {
+                background-color: #2a3a52;
+            }
+            QListWidget::item:hover {
+                background-color: #1e2e44;
+            }
+            QListWidget::indicator {
+                width: 15px;
+                height: 15px;
+                border: 1px solid #4A9EFF;
+                border-radius: 3px;
+                background-color: transparent;
+            }
+            QListWidget::indicator:checked {
+                background-color: #4A9EFF;
+            }
+            QListWidget::indicator:unchecked:disabled {
+                border-color: #3a4a62;
+            }
+        """)
+        self.list_widget.model().rowsMoved.connect(
+            lambda: self.order_changed.emit(self.get_status())
+        )
+        self.list_widget.itemChanged.connect(
+            lambda: self.order_changed.emit(self.get_status())
+        )
+        inner_layout.addWidget(self.list_widget)
+
+
+    def set_available_fields(self, fields: list):
+        self._available_fields = list(fields)
+        self._populate()
+
+    def _populate(self):
+        self.list_widget.blockSignals(True)
+        self.list_widget.clear()
+
+        saved = self._saved_order
+        ordered = [f for f in saved if f in self._available_fields]
+        ordered += [f for f in self._available_fields if f not in ordered]
+
+        for field in ordered:
+            item = QListWidgetItem("⠿   " + field)
+            item.setData(Qt.ItemDataRole.UserRole, field)
+            item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled |
+                Qt.ItemFlag.ItemIsSelectable |
+                Qt.ItemFlag.ItemIsUserCheckable |
+                Qt.ItemFlag.ItemIsDragEnabled
+            )
+            is_checked = (field in saved) if saved else True
+            item.setCheckState(Qt.CheckState.Checked if is_checked else Qt.CheckState.Unchecked)
+            self.list_widget.addItem(item)
+
+        self.list_widget.blockSignals(False)
+
+    def get_status(self) -> list:
+        result = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                result.append(item.data(Qt.ItemDataRole.UserRole))
+        return result
+
+    def set_status(self, value):
+        self._saved_order = list(value) if value else []
+        if self._available_fields:
+            self._populate()
+
 
 class RadioSelector(StyledEmptyWidget):
     selection_changed = pyqtSignal(str)
