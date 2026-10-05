@@ -6,13 +6,21 @@ from astropy.io import fits
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class Inspection:
+    SURVEY_LAYERS = {
+        'dr9':  'ls-dr9-grz',
+        'dr10': 'ls-dr10-grz',
+        'dr11': 'ls-dr11-grz',
+    }
+
     def __init__(self,main_window):
         self.main_window = main_window
 
         self.idx_to_band_dict = {0:'g',1:'r',2:'z'}
 
         self.inspection_parameters = self.main_window.inspection_parameters
-        self.inspection_parameters['survey']='Legacy Survey DR10'
+        self.dr_version = 'dr10'
+        self.layer = self.SURVEY_LAYERS[self.dr_version]
+        self.inspection_parameters['survey'] = 'Legacy Survey DR10'
         self.ra_col_name, self.dec_col_name = self.inspection_parameters['ra column name'],self.inspection_parameters['dec column name']
         self.cutout_size = 101
         self.simulation_mode = False
@@ -20,6 +28,23 @@ class Inspection:
         self.cached_images = {}
 
         self.df_has_been_modified = False
+
+    def set_survey(self, dr_version):
+        """Switch the cutout source and clear the image cache."""
+        dr = dr_version.lower()
+        self.dr_version = dr
+        self.layer = self.SURVEY_LAYERS.get(dr, 'ls-dr10-grz')
+        self.inspection_parameters['survey'] = f'Legacy Survey {dr.upper()}'
+        self.cached_images.clear()
+        self.cached_images_idxs.clear()
+
+    @staticmethod
+    def _is_blank(arr):
+        """True if the array is uniform (all-zero / all-one etc.) — out-of-footprint cutout."""
+        if arr is None:
+            return True
+        flat = arr.ravel().astype(float)
+        return float(flat.max()) - float(flat.min()) < 1e-4
     
     def get_current_images(self, idx):
         self.current_idx = idx
@@ -43,7 +68,7 @@ class Inspection:
     
     def get_current_url(self):
         ra, dec = self.main_window.df[self.ra_col_name].values[self.current_idx], self.main_window.df[self.dec_col_name].values[self.current_idx]
-        url='https://www.legacysurvey.org/viewer/?ra={}&dec={}&layer=ls-dr10-grz&pixscale=0.26&size=101&zoom=16'.format(ra,dec)
+        url='https://www.legacysurvey.org/viewer?ra={}&dec={}&layer={}&pixscale=0.26&size=101&zoom=16'.format(ra,dec,self.layer)
         return url
     
     def get_current_metadata(self):
@@ -92,7 +117,7 @@ class Inspection:
 
     def get_grz_cutout(self,ra, dec, cutout_size=101, _simulation = False):
         if not _simulation:
-            url = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={}&dec={}&layer={}&pixscale={}&size={}&zoom=16'.format(ra, dec, 'ls-dr10-grz', 0.262, int(cutout_size))
+            url = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={}&dec={}&layer={}&pixscale={}&size={}&zoom=16'.format(ra, dec, self.layer, 0.262, int(cutout_size))
             try:
                 return True, fits.open(url)[0].data
             except:
@@ -105,9 +130,9 @@ class Inspection:
                 return None
 
     def get_rgb_cutout(self,ra, dec, cutout_size=101, _simulation = False):
-        url = 'https://www.legacysurvey.org/viewer-desi/cutout.jpg?ra={}&dec={}&layer={}&pixscale={}&size={}&zoom=16'.format(ra, dec, 'ls-dr10-grz', 0.262, int(cutout_size))
+        url = 'https://www.legacysurvey.org/viewer/cutout.jpg?ra={}&dec={}&layer={}&pixscale={}&size={}&zoom=16'.format(ra, dec, self.layer, 0.262, int(cutout_size))
         if not _simulation:
-            response = requests.get(url, auth=('desi', '[REDACTED]'))
+            response = requests.get(url)
 
             if response.status_code == 200:
                 image_buffer = BytesIO(response.content)

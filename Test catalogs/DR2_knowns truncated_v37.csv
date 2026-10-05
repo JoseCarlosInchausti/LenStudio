@@ -1,6 +1,7 @@
-,Unnamed: 0,Ra,Dec,Final grade,source,ref,JI_grades,XH_grades,Unnamed: 8,Unnamed: 9,JI_comments
-0,2244,1.6798,5.0237,D,TS40,Huang 2022,A,,,,
-1,2248,1.7036,-11.2181,A,TS40,Huang 2022,b,,,,
-2,2398,4.093,-9.1126,A,TS40,Huang 2022,c,,,,
-3,2403,4.2156,-5.8182,D,TS40,Huang 2022,d,,,,
-4,2502,6.4448,3.6455,D,TS40,Huang 2022,,,,,
+,Unnamed: 0.11,Unnamed: 0.10,Unnamed: 0.9,Unnamed: 0.8,Unnamed: 0.7,Unnamed: 0.6,Unnamed: 0.5,Unnamed: 0.4,Unnamed: 0.3,Unnamed: 0.2,Unnamed: 0.1,Unnamed: 0,Ra,Dec,Final grade,source,ref,JI_grades,XH_grades,Unnamed: 8,Unnamed: 9,JI_comments
+0,0,0,0,0,0,0,0.0,0.0,0.0,0.0,0.0,2244.0,1.6798,5.0237,D,TS40,Huang 2022,f,,,,this is a great system
+1,1,1,1,1,1,1,1.0,1.0,1.0,1.0,1.0,2248.0,1.7036,-11.2181,A,TS40,Huang 2022,b,,,,lens arc at the bottom left
+2,2,2,2,2,2,2,2.0,2.0,2.0,2.0,2.0,2398.0,4.093,-9.1126,A,TS40,Huang 2022,b,,,,b
+3,3,3,3,3,3,3,3.0,3.0,3.0,3.0,3.0,2403.0,4.2156,-5.8182,D,TS40,Huang 2022,a,,,,a little too elongated
+4,4,4,4,4,4,4,4.0,4.0,4.0,4.0,4.0,2502.0,6.4448,3.6455,D,TS40,Huang 2022,a,,,,
+5,5,5,5,5,5,-1,,,,,,,,,,,,,,,,

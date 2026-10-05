@@ -1,13 +1,15 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea
-from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy
+from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QRectF, QRect, QEvent, pyqtSignal, QTimer
+import math
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
 import json
 import SettingsAssets
+import Theme
 
 class CheckBox():
     def __init__(self,text,main_window,background_color=None):
@@ -396,81 +398,111 @@ class StyledTextBox(QGroupBox):
 
         layout.addWidget(self.label)
 
-        DARK_BG = "#0f1c33"
-
-        self.setStyleSheet("""
-                            QGroupBox {
-                                border: 1px solid lightgray;
-                                border-radius: 5px;
+        self.setStyleSheet(f"""
+                            QGroupBox {{
+                                border: 1px solid {Theme.BORDER};
+                                border-radius: 8px;
                                 margin-top: 10px;
-                                background-color: #152238;
-                            }
+                                background-color: #1a2a44;
+                            }}
 
-                            QGroupBox::title {
+                            QGroupBox::title {{
                             subcontrol-origin: margin;
                             subcontrol-position: top left;
-                            background-color: #152238;
-                            color: lightgray;
+                            left: 8px;
+                            padding: 0 4px;
+                            background-color: {Theme.CARD};
+                            color: {Theme.TXT_MUTE};
                             top: -1px;
-                            }
-                            QLabel {
-                            color: white;
-                            }
+                            }}
+                            QLabel {{
+                            color: {Theme.TXT};
+                            }}
                             """)
-    
+
     def update_content(self,new_text):
         self.label.setText(new_text)
 
-class StyledInputBox(QGroupBox):
-    def __init__(self, title, content,caps_lock=False, N_max_lines=None,center_text=False,quick_inspection_check=None):
-        super().__init__(title)
-        self.quick_inspection_check=quick_inspection_check
+class MetadataField(QWidget):
+    """A clean label-over-value row for read-only metadata (no boxy frame)."""
+    def __init__(self, label, value, mono=False):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("metaField")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(2, 7, 2, 8)
+        lay.setSpacing(3)
+        self.label = QLabel(str(label))
+        self.label.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700; "
+            f"letter-spacing:0.6px; background:transparent;")
+        self.value = QLabel('' if str(value)=='nan' else str(value))
+        self.value.setWordWrap(True)
+        self.value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        mono_css = "font-family:'SF Mono','Menlo','Consolas',monospace;" if mono else ""
+        self.value.setStyleSheet(
+            f"color:{Theme.TXT}; font-size:15px; font-weight:600; {mono_css} background:transparent;")
+        lay.addWidget(self.label)
+        lay.addWidget(self.value)
+        self.setStyleSheet(f"QWidget#metaField {{ border-bottom: 1px solid {Theme.BORDER}; }}")
 
-        self.caps_lock=caps_lock
-        self.greyed_out=False
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 5, 4, 5)
-        layout.setSpacing(0)
+    def update_content(self, new_text):
+        self.value.setText('' if str(new_text)=='nan' else str(new_text))
 
+class StyledInputBox(QWidget):
+    def __init__(self, title, content, caps_lock=False, N_max_lines=None, center_text=False, quick_inspection_check=None):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("styledInputBox")
+        self.setStyleSheet("QWidget#styledInputBox { background: transparent; }")
+        self.quick_inspection_check = quick_inspection_check
+        self.caps_lock = caps_lock
+        self.greyed_out = False
+        self.center_text = center_text
+        self.N_max_lines = N_max_lines
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+
+        # Label sits cleanly on top
+        self.title_label = QLabel(str(title))
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700; "
+            f"letter-spacing:0.5px; background:transparent;")
+
+        # Text edit below
         self.text_edit = QTextEdit()
-        self.center_text=center_text
-        self.N_max_lines=N_max_lines
+        self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
+        self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)
+
+        outer.addWidget(self.title_label)
+        outer.addWidget(self.text_edit)
+
         self.update_text(str(content))
         if self.N_max_lines:
             self.text_edit.textChanged.connect(self._enforce_max_lines)
         if self.center_text:
             self.text_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
-        self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)  # removes inner border
-        
         if caps_lock:
-            self.text_edit.textChanged.connect(self._force_uppercase)        
-        layout.addWidget(self.text_edit)
+            self.text_edit.textChanged.connect(self._force_uppercase)
 
-        self.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid lightgray;
-                border-radius: 5px;
-                margin-top: 10px;
-                background-color: #152238;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                background-color: #152238;
-                color: lightgray;
-                top: -1px;
-            }
-            QTextEdit {
-                color: white;
-                background-color: #152238;
-            }
-            QTextEdit:focus {
-                border: 1px solid #4A9EFF;
-                border-radius: 3px;
-            }
-        """)
+        self._apply_style()
         self._set_line_count()
+
+    def _apply_style(self, focus=False, disabled=False):
+        border = Theme.ACCENT if focus else Theme.FIELD_BRD
+        text = Theme.TXT_MUTE if disabled else Theme.TXT
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                color: {text};
+                background-color: {Theme.FIELD};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 4px 8px;
+            }}
+        """)
 
     # def eventFilter(self,obj,event):
     #     if obj == self.text_edit:
@@ -482,97 +514,19 @@ class StyledInputBox(QGroupBox):
     #     return super().eventFilter(obj, event)
     
     def _set_border(self,with_focus_outline):
-        if with_focus_outline:
-            self.setStyleSheet("""
-                                QGroupBox {
-                                    border: 1px solid lightgray;
-                                    border-radius: 5px;
-                                    margin-top: 10px;
-                                    background-color: #152238;
-                                }
-                                QGroupBox::title {
-                                    subcontrol-origin: margin;
-                                    subcontrol-position: top left;
-                                    background-color: #152238;
-                                    color: lightgray;
-                                    top: -1px;
-                                }
-                                QTextEdit {
-                                    color: white;
-                                    background-color: #152238;
-                                }
-                                QTextEdit:focus {
-                                    border: 1px solid #4A9EFF;
-                                    border-radius: 3px;
-                                }
-                                """)
-        else:
-            self.setStyleSheet("""
-                    QGroupBox {
-                        border: 1px solid lightgray;
-                        border-radius: 5px;
-                        margin-top: 10px;
-                        background-color: #152238;
-                    }
-                    QGroupBox::title {
-                        subcontrol-origin: margin;
-                        subcontrol-position: top left;
-                        background-color: #152238;
-                        color: lightgray;
-                        top: -1px;
-                    }
-                    QTextEdit {
-                        color: white;
-                        background-color: #152238;
-                    }
-                    """)
+        self._apply_style(focus=with_focus_outline, disabled=self.greyed_out)
 
     def disable_input(self,grey_out=True):
         self.text_edit.setReadOnly(True)
         if grey_out:
-            self.setStyleSheet("""
-                QGroupBox {
-                    border: 1px solid lightgray;
-                    border-radius: 5px;
-                    margin-top: 10px;
-                    background-color: #152238;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    subcontrol-position: top left;
-                    background-color: #152238;
-                    color: lightgray;
-                    top: -1px;
-                }
-                QTextEdit {
-                    color: lightgray;
-                    background-color: #152238;
-                }
-            """)
             self.greyed_out=True
-    
+            self._apply_style(disabled=True)
+
     def enable_input(self):
         self.text_edit.setReadOnly(False)
         if self.greyed_out:
-            self.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid lightgray;
-                border-radius: 5px;
-                margin-top: 10px;
-                background-color: #152238;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                background-color: #152238;
-                color: lightgray;
-                top: -1px;
-            }
-            QTextEdit {
-                color: white;
-                background-color: #152238;
-            }
-            """)
+            self.greyed_out=False
+            self._apply_style()
 
     def update_text(self,new_text):
         new_text=str(new_text)
@@ -587,10 +541,11 @@ class StyledInputBox(QGroupBox):
         current_content = self.text_edit.toPlainText()
         return current_content
 
-    def change_input_size(self,new_size):
+    def change_input_size(self, new_size):
         font = QFont()
         font.setPointSize(int(new_size))
         self.text_edit.setFont(font)
+        self._set_line_count()
 
     def _force_uppercase(self):
         cursor = self.text_edit.textCursor()
@@ -770,72 +725,42 @@ class StyledTabBar(QWidget):
 
     def _update_styles(self):
         if self.orientation=='horizontal':
-            active_style = """
-                QPushButton {
-                    background-color: white;
+            active_style = f"""
+                QPushButton {{
+                    background-color: {Theme.ACCENT};
                     border-radius: 8px;
-                    color: #152238;
-                    font-size: 16px;
+                    color: white;
+                    font-size: 15px;
                     font-weight: 600;
                     padding: 6px 18px;
-                }
-                QPushButton:hover {
-                    background-color: #f0ffff;
-                }
-                QPushButton:pressed {
-                    background-color: #f0f8ff;
-                    padding-top: 2px;
-                    padding-left: 2px;
-                }
-                QPushButton:focus {
-                    border: 3px solid #4A9EFF;
-                    border-radius: 8px;
-                }
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: {Theme.ACCENT_HI}; }}
             """
         else:
-            active_style = """
-                QPushButton {
-                    background-color: white;
+            active_style = f"""
+                QPushButton {{
+                    background-color: {Theme.ACCENT};
                     border-radius: 8px;
-                    color: #152238;
-                    font-size: 16px;
+                    color: white;
+                    font-size: 15px;
                     font-weight: 600;
-                    padding: 3px 9px;
-                }
-                QPushButton:hover {
-                    background-color: #f0ffff;
-                }
-                QPushButton:pressed {
-                    background-color: #f0f8ff;
-                    padding-top: 2px;
-                    padding-left: 2px;
-                }
-                QPushButton:focus {
-                    border: 3px solid #4A9EFF;
-                    border-radius: 8px;
-                }
-            """   
-        inactive_style = """
-            QPushButton {
-                background-color: #d3d3d3;
+                    padding: 6px 14px;
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: {Theme.ACCENT_HI}; }}
+            """
+        inactive_style = f"""
+            QPushButton {{
+                background-color: transparent;
                 border-radius: 8px;
-                color: #4a4a4a;
-                font-size: 16px;
+                color: {Theme.TXT_MUTE};
+                font-size: 15px;
                 font-weight: 600;
-                padding: 3px 9px;
-            }
-            QPushButton:hover {
-                background-color: #dcdcdc;
-            }
-            QPushButton:pressed {
-                background-color: #c8c8c8;
-                padding-top: 2px;
-                padding-left: 2px;
-            }
-            QPushButton:focus {
-                border: 3px solid #4A9EFF;
-                border-radius: 8px;
-            }
+                padding: 6px 14px;
+                border: none;
+            }}
+            QPushButton:hover {{ background-color: #17273f; color: {Theme.TXT_SOFT}; }}
         """
         for name, btn in self.buttons.items():
             btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)
@@ -850,20 +775,22 @@ class StyledGroupBox(QGroupBox):
             self.inner_layout = QHBoxLayout(self)
         self.inner_layout.setContentsMargins(4, 5, 4, 5)
         self.inner_layout.setSpacing(6)
-        self.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid lightgray;
-                border-radius: 5px;
+        self.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {Theme.BORDER};
+                border-radius: 8px;
                 margin-top: 10px;
-                background-color: #152238;
-            }
-            QGroupBox::title {
+                background-color: {Theme.CARD};
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
-                background-color: #152238;
-                color: lightgray;
+                left: 8px;
+                padding: 0 4px;
+                background-color: {Theme.CARD};
+                color: {Theme.TXT_MUTE};
                 top: -1px;
-            }
+            }}
         """)
 
     def add_widget(self, widget, stretch=0):
@@ -979,3 +906,121 @@ class InspectionSettings:
             return widget
         else:
             return
+
+
+# ── VoiceOver animated indicator ─────────────────────────────────────────────
+
+class VoiceOverIndicator(QWidget):
+    """
+    Jarvis-style arc animation for VoiceOver mode.
+
+    Three concentric partial arcs rotate independently (middle one counter-
+    clockwise) with speed and colour changing per state:
+        'listening'  — slow blue arcs + pulsing centre dot
+        'processing' — fast yellow arcs
+        'heard'      — brief green flash, then back to listening speed
+        'error'      — red arcs, stop rotating
+    """
+
+    _ARC_SPAN    = 240 * 16       # Qt arc units (1/16 °)
+    _RADII       = (7, 11, 15)    # px, inner → outer
+    _DIRECTIONS  = (1, -1, 1)     # CW, CCW, CW
+
+    _COLORS = {
+        'listening':  (74,  158, 255),   # accent blue
+        'processing': (243, 156,  18),   # amber
+        'heard':      (46,  204, 113),   # green
+        'error':      (231,  76,  60),   # red
+    }
+    _SPEEDS = {                          # °/frame per arc (inner, mid, outer)
+        'listening':  (0.6, 0.9, 0.4),
+        'processing': (3.5, 5.0, 2.5),
+        'heard':      (1.2, 1.8, 0.8),
+        'error':      (0.0, 0.0, 0.0),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._state  = 'listening'
+        self._angles = [0.0, 120.0, 240.0]   # staggered start angles
+        self._pulse  = 0.0                    # 0–2π for centre dot pulse
+        self._heard_t = 0.0                   # countdown after 'heard'
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(33)                 # ~30 fps
+
+        # Size: arc circle (36 px) + gap + label
+        self.setFixedHeight(36)
+        self._label_text = 'Listening...'
+
+    def set_state(self, state: str, label: str = ''):
+        self._state = state
+        self._label_text = label
+        if state == 'heard':
+            self._heard_t = 18              # ~0.6 s at 30 fps, then back to listening
+        self.update()
+
+    def _tick(self):
+        speeds = self._SPEEDS.get(self._state, (0, 0, 0))
+        for i, (speed, direction) in enumerate(zip(speeds, self._DIRECTIONS)):
+            self._angles[i] = (self._angles[i] + speed * direction) % 360
+
+        self._pulse = (self._pulse + 0.08) % (2 * math.pi)
+
+        if self._heard_t > 0:
+            self._heard_t -= 1
+            if self._heard_t == 0:
+                self._state = 'listening'
+                self._label_text = 'Listening...'
+
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        h  = self.height()
+        r_outer = self._RADII[-1]
+        cx = r_outer + 2          # circle centre x
+        cy = h // 2
+
+        r, g, b = self._COLORS.get(self._state, (74, 158, 255))
+
+        # ── Arcs ─────────────────────────────────────────────────────
+        alphas = (220, 160, 100)
+        widths = (2.0, 1.5, 1.0)
+        for i, (radius, alpha, width) in enumerate(zip(self._RADII, alphas, widths)):
+            pen = QPen(QColor(r, g, b, alpha), width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            start_angle = int(self._angles[i] * 16)
+            rect = QRect(cx - radius, cy - radius, radius * 2, radius * 2)
+            painter.drawArc(rect, start_angle, self._ARC_SPAN)
+
+        # ── Centre dot (pulses in size) ───────────────────────────────
+        pulse_r = 2.5 + 1.0 * (math.sin(self._pulse) * 0.5 + 0.5)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(r, g, b, 230))
+        painter.drawEllipse(
+            QRectF(cx - pulse_r, cy - pulse_r, pulse_r * 2, pulse_r * 2))
+
+        # ── Label ────────────────────────────────────────────────────
+        if self._label_text:
+            text_x = cx + r_outer + 10
+            painter.setPen(QColor(Theme.TXT_SOFT))
+            font = painter.font()
+            font.setPointSize(11)
+            font.setWeight(QFont.Weight.Medium)
+            painter.setFont(font)
+            painter.drawText(
+                QRect(text_x, 0, self.width() - text_x, h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                self._label_text,
+            )
+
+    def sizeHint(self):
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._label_text) + 10
+        return QSize(self._RADII[-1] * 2 + 14 + text_w, 36)

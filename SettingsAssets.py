@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QListWidgetItem,QAbstractItemView,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget
-from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QListWidgetItem,QAbstractItemView,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QApplication
+from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QDesktopServices
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal,QUrl
+import Theme
 
 class StyledEmptyWidget(QWidget):
     def __init__(self):
@@ -418,9 +419,195 @@ class Checkbox(StyledEmptyWidget):
         self.setLayout(self.horizontal_layout)
 
     def get_status(self):
-        return self.checkbox.isChecked() 
-    
+        return self.checkbox.isChecked()
+
     def set_status(self,status):
         #status is str from json file
         is_checked=bool(status)
         self.checkbox.setChecked(is_checked)
+
+
+_LS_ACK = (
+    "The Legacy Surveys consist of three individual and complementary projects: "
+    "the Dark Energy Camera Legacy Survey (DECaLS; Proposal ID #2014B-0404; PIs: David Schlegel and "
+    "Arjun Dey), the Beijing-Arizona Sky Survey (BASS; NOAO Prop. ID #2015A-0801; PIs: Zhou Xu and "
+    "Xiaohui Fan), and the Mayall z-band Legacy Survey (MzLS; Prop. ID #2016A-0453; PI: Arjun Dey). "
+    "DECaLS, BASS and MzLS together include data obtained, respectively, at the Blanco telescope, Cerro "
+    "Tololo Inter-American Observatory, NSF's NOIRLab; the Bok telescope, Steward Observatory, University "
+    "of Arizona; and the Mayall telescope, Kitt Peak National Observatory, NSF's NOIRLab. Pipeline "
+    "processing and analyses of the data were supported by NOIRLab and the Lawrence Berkeley National "
+    "Laboratory (LBNL). The Legacy Surveys project is honored to be permitted to conduct astronomical "
+    "research on Iolkam Du'ag (Kitt Peak), a mountain with particular significance to the Tohono "
+    "O'odham Nation.\n\n"
+    "The Cerro Tololo Inter-American Observatory and NOIRLab programs are supported by the National "
+    "Science Foundation under a cooperative agreement with the Association of Universities for Research "
+    "in Astronomy (AURA). BASS is a key project of the Telescope Access Program (TAP), which has been "
+    "funded by the National Astronomical Observatories of China, the Chinese Academy of Sciences (the "
+    "Strategic Priority Research Program \"The Emergence of Cosmological Structures\" Grant # "
+    "XDB09000000), and the Special Fund for Astronomy from the Ministry of Finance. The BASS is also "
+    "supported by the External Cooperation Program of Chinese Academy of Sciences (Grant # "
+    "114A11KYSB20160057), and Chinese National Natural Science Foundation (Grant # 11433005). The Legacy "
+    "Survey team makes use of data products from the Near-Earth Object Wide-field Infrared Survey "
+    "Explorer (NEOWISE), which is a project of the Jet Propulsion Laboratory/California Institute of "
+    "Technology. NEOWISE is funded by the National Aeronautics and Space Administration.\n\n"
+    "The Legacy Surveys imaging of the DESI footprint is supported by the Director, Office of Science, "
+    "Office of High Energy Physics of the U.S. Department of Energy under Contract No. "
+    "DE-AC02-05CH11231. Additional support for the BASS within the DECam Legacy Survey was provided by "
+    "the U.S. National Science Foundation under grants AST-0321328, AST-0607857, AST-0908dp4, and "
+    "AST-1614668."
+)
+
+
+class InfoPage(StyledEmptyWidget):
+    """Static info/attribution page shown under Settings → Info."""
+
+    _ACK_URL = "https://www.legacysurvey.org/acknowledgment/"
+
+    def __init__(self):
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setSpacing(14)
+
+        # ── Intro ────────────────────────────────────────────────────
+        outer.addWidget(self._section_header("DESI LEGACY IMAGING SURVEYS"))
+
+        intro = QLabel(
+            "LenStudio connects to and displays public imaging data from the DESI Legacy "
+            "Imaging Surveys (legacysurvey.org) at runtime. No survey data is bundled "
+            "with this software — images are fetched directly from Legacy Survey servers "
+            "and remain the property of their respective institutions. "
+            "The surveys' official acknowledgement is reproduced below.")
+        intro.setWordWrap(True)
+        intro.setStyleSheet(
+            f"color:{Theme.TXT_SOFT}; font-size:13px; background:transparent;")
+        outer.addWidget(intro)
+
+        # ── Acknowledgement text ─────────────────────────────────────
+        self._ack_box = QTextEdit()
+        self._ack_box.setPlainText(_LS_ACK)
+        self._ack_box.setReadOnly(True)
+        self._ack_box.setFixedHeight(160)
+        self._ack_box.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {Theme.FIELD};
+                border: 1px solid {Theme.FIELD_BRD};
+                border-radius: 8px;
+                color: {Theme.TXT_SOFT};
+                font-size: 13px;
+                padding: 10px 12px;
+            }}
+        """)
+        outer.addWidget(self._ack_box)
+
+        link_btn = self._secondary_button("View official acknowledgement  →", accent=True)
+        link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self._ACK_URL)))
+        outer.addWidget(link_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # ── Image licence (CC BY 4.0) ─────────────────────────────────
+        outer.addWidget(self._section_header("IMAGE LICENSE"))
+
+        licence_card = self._citation_card(
+            authors="Legacy Surveys / D. Lang (Perimeter Institute)",
+            year="",
+            title="Sky viewer cutout images are licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).",
+            journal="",
+            volume_page="",
+            arxiv="",
+        )
+        outer.addWidget(licence_card)
+
+        cc_btn = self._secondary_button("View CC BY 4.0 licence  →", accent=True)
+        cc_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://creativecommons.org/licenses/by/4.0/")))
+        outer.addWidget(cc_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # ── Survey overview paper ─────────────────────────────────────
+        outer.addWidget(self._section_header("SURVEY OVERVIEW PAPER"))
+
+        outer.addWidget(self._citation_card(
+            authors="Dey, A., Schlegel, D. J., Lang, D., et al.",
+            year="2019",
+            title="Overview of the DESI Legacy Imaging Surveys",
+            journal="The Astronomical Journal",
+            volume_page="157, 168",
+            arxiv="arXiv:1804.08657",
+        ))
+
+        outer.addStretch()
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    def _section_header(self, title, caption=None):
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lbl = QLabel(title)
+        lbl.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700;"
+            f" letter-spacing:0.7px; background:transparent;")
+        lay.addWidget(lbl)
+        if caption:
+            cap = QLabel(caption)
+            cap.setWordWrap(True)
+            cap.setStyleSheet(
+                f"color:{Theme.TXT_MUTE}; font-size:12px; background:transparent;")
+            lay.addWidget(cap)
+        return w
+
+    def _secondary_button(self, text, accent=False):
+        btn = QPushButton(text)
+        color = Theme.ACCENT if accent else Theme.TXT
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1c2a42; color: {color};
+                border: 1px solid #33425c; border-radius: 8px;
+                font-size: 13px; font-weight: 600; padding: 6px 16px;
+            }}
+            QPushButton:hover {{ background-color: #243a5a; }}
+            QPushButton:pressed {{ background-color: #182942; }}
+        """)
+        return btn
+
+    def _citation_card(self, authors, year, title, journal, volume_page, arxiv):
+        card = QFrame()
+        card.setObjectName("citationCard")
+        card.setStyleSheet(f"""
+            QFrame#citationCard {{
+                background-color: {Theme.CARD};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 10px;
+            }}
+        """)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(4)
+
+        year_span = f"  <span style='color:{Theme.TXT_MUTE};font-weight:400'>{year}</span>" if year else ""
+        author_lbl = QLabel(f"{authors}{year_span}")
+        author_lbl.setStyleSheet(
+            f"color:{Theme.TXT}; font-size:14px; font-weight:700; background:transparent;")
+        author_lbl.setTextFormat(Qt.TextFormat.RichText)
+        author_lbl.setWordWrap(True)
+        lay.addWidget(author_lbl)
+
+        if title:
+            title_lbl = QLabel(f"<i>{title}</i>")
+            title_lbl.setWordWrap(True)
+            title_lbl.setStyleSheet(
+                f"color:{Theme.TXT_SOFT}; font-size:13px; background:transparent;")
+            title_lbl.setTextFormat(Qt.TextFormat.RichText)
+            lay.addWidget(title_lbl)
+
+        journal_parts = [p for p in [
+            f"{journal}, {volume_page}".strip(", ") if journal else "",
+            arxiv
+        ] if p]
+        if journal_parts:
+            journal_lbl = QLabel("  ·  ".join(journal_parts))
+            journal_lbl.setStyleSheet(
+                f"color:{Theme.TXT_MUTE}; font-size:12px; background:transparent;")
+            lay.addWidget(journal_lbl)
+        return card
