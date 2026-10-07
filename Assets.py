@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy
-from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen
+from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen,QIntValidator
+from Icons import tabler_pixmap, OutlineIcon
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QSize, Qt, QRectF, QRect, QEvent, pyqtSignal, QTimer
@@ -39,6 +40,105 @@ class StyledText(QLabel):
                                 font-size: 16px;
                                 }
                            """)
+
+class SystemJumpWidget(QWidget):
+    """Top-bar system counter. Click the number to jump to any system."""
+    jump_requested = pyqtSignal(int)  # emits 0-based index
+
+    _LABEL_SS = "QLabel { color: white; font-size: 16px; background: transparent; }"
+    _SOFT_SS  = "QLabel { color: #8a99b3; font-size: 16px; background: transparent; }"
+    _INPUT_SS = (
+        "QLineEdit { color: white; font-size: 16px; background: transparent;"
+        " border: none; border-bottom: 1px solid #4A9EFF; }"
+    )
+
+    def __init__(self):
+        super().__init__()
+        self._total = 1
+        self._current = 1
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+
+        self._stack = QStackedWidget()
+        self._stack.setSizePolicy(
+            self._stack.sizePolicy().horizontalPolicy(),
+            self._stack.sizePolicy().verticalPolicy()
+        )
+        row.addWidget(self._stack)
+
+        # Page 0 — display label
+        self._label = QLabel()
+        self._label.setStyleSheet(self._LABEL_SS)
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._label.installEventFilter(self)
+        self._stack.addWidget(self._label)
+
+        # Page 1 — inline edit ("System [__] of N")
+        edit_page = QWidget()
+        edit_page.setStyleSheet("background: transparent;")
+        edit_row = QHBoxLayout(edit_page)
+        edit_row.setContentsMargins(0, 0, 0, 0)
+        edit_row.setSpacing(4)
+
+        self._pre  = QLabel("Cutout")
+        self._pre.setStyleSheet(self._SOFT_SS)
+        self._input = QLineEdit()
+        self._input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._input.setValidator(QIntValidator(1, 999999))
+        self._input.setFixedWidth(52)
+        self._input.setStyleSheet(self._INPUT_SS)
+        self._input.returnPressed.connect(self._confirm)
+        self._input.installEventFilter(self)
+        self._suf  = QLabel()
+        self._suf.setStyleSheet(self._SOFT_SS)
+
+        edit_row.addStretch()
+        edit_row.addWidget(self._pre)
+        edit_row.addWidget(self._input)
+        edit_row.addWidget(self._suf)
+        edit_row.addStretch()
+        self._stack.addWidget(edit_page)
+
+    def set_system(self, current_1based, total):
+        self._current = current_1based
+        self._total   = total
+        self._label.setText(
+            f"Cutout <u style='color:#4A9EFF'>{current_1based}</u> of {total}"
+        )
+        self._suf.setText(f"of {total}")
+
+    def _enter_edit(self):
+        self._input.setText(str(self._current))
+        self._stack.setCurrentIndex(1)
+        self._input.selectAll()
+        self._input.setFocus()
+
+    def _confirm(self):
+        text = self._input.text().strip()
+        if text.isdigit():
+            n = max(1, min(int(text), self._total))
+            self.jump_requested.emit(n - 1)
+        self._exit_edit()
+
+    def _exit_edit(self):
+        self._stack.setCurrentIndex(0)
+
+    def eventFilter(self, obj, event):
+        if obj is self._label and event.type() == QEvent.Type.MouseButtonPress:
+            self._enter_edit()
+            return True
+        if obj is self._input:
+            if event.type() == QEvent.Type.KeyPress:
+                if event.key() == Qt.Key.Key_Escape:
+                    self._exit_edit()
+                    return True
+            if event.type() == QEvent.Type.FocusOut:
+                self._exit_edit()
+        return super().eventFilter(obj, event)
+
 
 class ClickEffectStyleButton(QPushButton):
     def __init__(self, text="", parent=None, size=(150, 25)):
@@ -232,31 +332,56 @@ def show_popup_window(title,text,header_icon_path):
 class ImageWidget(pg.GraphicsLayoutWidget):
     def __init__(self,image_arr,panel_size=(200,200)):
         super().__init__()
-        # Remove outer margins of the GraphicsLayoutWidget
         self.ci.setContentsMargins(0, 0, 0, 0)
         self.ci.layout.setSpacing(0)
-
-        # Remove Qt frame around widget
         self.setFrameStyle(0)
 
-        # Create a ViewBox with no padding
         self.plot = self.addViewBox()
         self.plot.setAspectLocked(True)
-        self.plot.suggestPadding(0)      # *** THIS removes most of the visible border ***
-        self.plot.setBorder(None)    # removes ViewBox border
+        self.plot.suggestPadding(0)
+        self.plot.setBorder(None)
 
         panel_h, panel_w = panel_size[0], panel_size[1]
         self.img_h, self.img_w = image_arr.shape[0], image_arr.shape[1]
-        # self.plot = self.addViewBox()
-        # self.plot.setAspectLocked(True)
         self.img_item = pg.ImageItem()
         self.plot.addItem(self.img_item)
-        self.img_item.setImage(image_arr)
         self.setFixedSize(panel_h, panel_w)
         self.plot.setLimits(xMin=0, xMax=self.img_w, yMin=0, yMax=self.img_h, minXRange=10, minYRange=10)
 
-    def update_image(self,new_image):
-        self.img_item.setImage(new_image)
+        self._grayscale = image_arr.ndim == 2
+        self._base_lo = 0.0
+        self._base_hi = 1.0
+        self._contrast_scale = 1.0
+        if self._grayscale:
+            self._compute_base_levels(image_arr)
+            self.img_item.setImage(image_arr, autoLevels=False)
+            self._apply_levels()
+        else:
+            self.img_item.setImage(image_arr)
+
+    def _compute_base_levels(self, arr):
+        flat = arr.ravel().astype(float)
+        lo = float(np.percentile(flat, 2))
+        hi = float(np.percentile(flat, 99))
+        self._base_lo = lo
+        self._base_hi = hi if hi > lo else lo + 1.0
+
+    def _apply_levels(self):
+        span = self._base_hi - self._base_lo
+        self.img_item.setLevels([self._base_lo, self._base_lo + span * self._contrast_scale])
+
+    def set_contrast_scale(self, slider_value):
+        """slider_value 1-100: higher = tighter upper limit = more contrast."""
+        self._contrast_scale = 10 ** ((50 - slider_value) / 60.0)
+        self._apply_levels()
+
+    def update_image(self, new_image):
+        if self._grayscale:
+            self._compute_base_levels(new_image)
+            self.img_item.setImage(new_image, autoLevels=False)
+            self._apply_levels()
+        else:
+            self.img_item.setImage(new_image)
         self.plot.setLimits(xMin=0, xMax=self.img_w, yMin=0, yMax=self.img_h, minXRange=10, minYRange=10)
 
 
@@ -465,19 +590,34 @@ class StyledInputBox(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(4)
 
-        # Label sits cleanly on top
+        # Title row: label + optional lock icon
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(4)
+
         self.title_label = QLabel(str(title))
         self.title_label.setWordWrap(True)
         self.title_label.setStyleSheet(
             f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700; "
             f"letter-spacing:0.5px; background:transparent;")
 
+        self._lock_label = QLabel()
+        self._lock_label.setPixmap(tabler_pixmap(OutlineIcon.LOCK, size=11, color="#f59e0b"))
+        self._lock_label.setFixedSize(13, 13)
+        self._lock_label.setScaledContents(True)
+        self._lock_label.setStyleSheet("background:transparent;")
+        self._lock_label.hide()
+
+        title_row.addWidget(self.title_label)
+        title_row.addStretch()
+        title_row.addWidget(self._lock_label)
+
         # Text edit below
         self.text_edit = QTextEdit()
         self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
         self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)
 
-        outer.addWidget(self.title_label)
+        outer.addLayout(title_row)
         outer.addWidget(self.text_edit)
 
         self.update_text(str(content))
@@ -527,6 +667,9 @@ class StyledInputBox(QWidget):
         if self.greyed_out:
             self.greyed_out=False
             self._apply_style()
+
+    def show_lock(self, visible: bool):
+        self._lock_label.setVisible(visible)
 
     def update_text(self,new_text):
         new_text=str(new_text)
