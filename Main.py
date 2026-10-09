@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QApplication, QStackedWidget, QMainWindow
+from PyQt6.QtWidgets import QApplication, QStackedWidget, QMainWindow, QMessageBox
 from PyQt6.QtGui import QIcon
 import sys
 import pandas as pd
@@ -70,6 +70,19 @@ class LenStudio(QMainWindow):
         self.stacked_widget.removeWidget(old_widget)
         old_widget.deleteLater()
         self.stacked_widget.insertWidget(index, new_widget)
+
+    def closeEvent(self, event):
+        studio = self.stacked_widget.currentWidget()
+        if hasattr(studio, 'Settings') and bool(studio.Settings.get_setting('confirm_on_close')):
+            reply = QMessageBox.question(
+                self, 'Close LenStudio',
+                'Are you sure you want to close?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

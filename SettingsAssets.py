@@ -390,6 +390,102 @@ class RadioSelector(StyledEmptyWidget):
         self._update_styles()
 
 
+class NumberInput(StyledEmptyWidget):
+    """A +/- stepper for integer settings. Shows 'off' when value is 0 and minimum is 0."""
+    value_changed = pyqtSignal(int)
+
+    def __init__(self, label: str, caption: str = None,
+                 minimum: int = 0, maximum: int = 300,
+                 suffix: str = 'sec', step: int = 15):
+        super().__init__()
+        self._value = minimum
+        self._min = minimum
+        self._max = maximum
+        self._suffix = suffix
+        self._step = step
+
+        outer = QHBoxLayout()
+        outer.addSpacing(30)
+        inner = QVBoxLayout()
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(4)
+        outer.addLayout(inner)
+        self.setLayout(outer)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet("QLabel { color: white; font-size: 14px; }")
+        inner.addWidget(lbl)
+
+        if caption:
+            cap = QLabel(caption)
+            cap.setStyleSheet("QLabel { color: #aaaaaa; font-size: 11px; }")
+            cap.setWordWrap(True)
+            inner.addWidget(cap)
+
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setContentsMargins(0, 4, 0, 0)
+        ctrl_row.setSpacing(6)
+
+        _btn_ss = """
+            QPushButton { background-color: #2a3a52; color: #e8edf5;
+                          border: 1px solid #3a4a62; border-radius: 6px;
+                          font-size: 16px; font-weight: 600; }
+            QPushButton:hover { background-color: #3a4a62; }
+            QPushButton:pressed { background-color: #1c2a40; }
+            QPushButton:disabled { color: #344862; border-color: #1e2e40;
+                                   background-color: #1a2538; }
+        """
+        self._dec = QPushButton('−')
+        self._dec.setFixedSize(30, 30)
+        self._dec.setStyleSheet(_btn_ss)
+
+        self._disp = QLabel()
+        self._disp.setFixedWidth(84)
+        self._disp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._inc = QPushButton('+')
+        self._inc.setFixedSize(30, 30)
+        self._inc.setStyleSheet(_btn_ss)
+
+        ctrl_row.addWidget(self._dec)
+        ctrl_row.addWidget(self._disp)
+        ctrl_row.addWidget(self._inc)
+        ctrl_row.addStretch()
+        inner.addLayout(ctrl_row)
+
+        self._dec.clicked.connect(lambda: self._adjust(-self._step))
+        self._inc.clicked.connect(lambda: self._adjust(+self._step))
+        self._refresh()
+
+    def _adjust(self, delta: int):
+        self._value = max(self._min, min(self._max, self._value + delta))
+        self._refresh()
+        self.value_changed.emit(self._value)
+
+    def _refresh(self):
+        _base_ss = ("QLabel { background-color: #1c2a42; border: 1px solid #33425c; "
+                    "border-radius: 6px; font-size: 13px; font-weight: 600; padding: 3px 8px; }")
+        if self._value == 0 and self._min == 0:
+            self._disp.setText('off')
+            self._disp.setStyleSheet(_base_ss + " QLabel { color: #8a99b3; }")
+        else:
+            self._disp.setText(f'{self._value} {self._suffix}')
+            self._disp.setStyleSheet(_base_ss + " QLabel { color: #e8edf5; }")
+        self._dec.setEnabled(self._value > self._min)
+        self._inc.setEnabled(self._value < self._max)
+
+    def get_status(self) -> int:
+        return self._value
+
+    def set_status(self, value):
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            v = self._min
+        self._value = max(self._min, min(self._max, v))
+        self._refresh()
+
+
 class Checkbox(StyledEmptyWidget):
     def __init__(self,checkbox_title, checkbox_caption=None):
         super().__init__()

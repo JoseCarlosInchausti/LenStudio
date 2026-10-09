@@ -65,11 +65,68 @@
                     "name":"quick_inspection_next_key_choice",
                     "options":["Enter","Tab","Space"]
                 }
+            ],
+            "Time Budget": [
+                {
+                    "type":"section label",
+                    "label":"Pacing reference",
+                    "caption":"A soft time target per system. A draining bar appears between the navigation buttons as a gentle reminder — it never auto-advances or blocks input. Set to 0 to disable."
+                },
+                {
+                    "type":"number input",
+                    "label":"Target time per system",
+                    "name":"pace_seconds",
+                    "minimum":0,
+                    "maximum":300,
+                    "suffix":"sec",
+                    "step":15
+                }
+            ]
+        },
+        "Navigation": {
+            "General": [
+                {
+                    "type":"checkmark",
+                    "label":"Loop at end of catalog",
+                    "caption":"When you reach the last system, navigation wraps back to the first instead of stopping.",
+                    "name":"loop_at_end"
+                },
+                {
+                    "type":"checkmark",
+                    "label":"Warn before revisiting graded systems",
+                    "caption":"Show a confirmation prompt when navigating to a system that already has a grade assigned.",
+                    "name":"warn_regrading"
+                },
+                {
+                    "type":"checkmark",
+                    "label":"Confirm before closing",
+                    "caption":"Ask for confirmation before quitting LenStudio.",
+                    "name":"confirm_on_close"
+                }
+            ]
+        },
+        "Appearance": {
+            "Default Survey": [
+                {
+                    "type":"section label",
+                    "label":"Survey on session start",
+                    "caption":"The data release loaded automatically when a new inspection session begins."
+                },
+                {
+                    "type":"radio select",
+                    "label":"Default survey:",
+                    "name":"default_survey",
+                    "options":["DR9","DR10","DR11"]
+                }
+            ],
+            "Images": [
+                {
+                    "type":"checkmark",
+                    "label":"Reset contrast sliders on navigation",
+                    "caption":"Restore all GRZ contrast sliders to their default position (center) each time you move to a new system.",
+                    "name":"reset_contrast_on_nav"
+                }
             ]
         }
     }
 }
-
-
-
-        

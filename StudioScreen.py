@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy,QGridLayout,QApplication, QStackedWidget,QLabel,QMessageBox,QFrame,QGraphicsDropShadowEffect,QComboBox,QStyledItemDelegate,QDialog,QPushButton,QSlider,QToolTip,QProgressBar,QScrollArea,QTableWidget,QTableWidgetItem,QHeaderView
 from PyQt6.QtCore import Qt, QUrl,QThread, pyqtSignal, QEvent, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint, QSize, QTimer
-from PyQt6.QtGui import QPainter, QDesktopServices, QColor, QCursor, QBrush, QPen, QFont
+from PyQt6.QtGui import QPainter, QDesktopServices, QColor, QCursor, QBrush, QPen, QFont, QImage, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QRectF
 
@@ -9,7 +9,7 @@ import math
 import numpy as np
 import time
 # from Assets import SvgWidget, ImageWidget, InputField, ClickEffectButton
-from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, MetadataField, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar,InspectionSettings,ScrollPanel,StyledGroupBox,VoiceOverIndicator,SystemJumpWidget
+from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, MetadataField, ClickEffectStyleButton, StyledText, StyledInputBox,StatusWidget,CheckBox,StyledTabBar,InspectionSettings,ScrollPanel,StyledGroupBox,VoiceOverIndicator,SystemJumpWidget,SCROLLBAR_SS,save_recent
 from InspectionEngine import Inspection, PrefetchThread
 import Theme
 from Icons import tabler_icon, tabler_pixmap, badge_pixmap, OutlineIcon, ICON_WHITE, ICON_SOFT
@@ -53,6 +53,61 @@ QCheckBox::indicator {{ width:18px; height:18px; border:1px solid {Theme.FIELD_B
                         border-radius:4px; background:{Theme.FIELD}; }}
 QCheckBox::indicator:checked {{ background:{Theme.ACCENT}; border-color:{Theme.ACCENT}; }}
 """
+
+# ─── Pace bar ─────────────────────────────────────────────────────────────────
+
+class PaceBar(QWidget):
+    """
+    A razor-thin full-width bar that drains left-to-right as time elapses.
+
+    Color interpolates smoothly:
+      full → 33% left : accent blue → amber
+      33% → 0%        : amber → red
+
+    Non-intrusive by design — no labels, no alarms. Call set_fraction(1.0)
+    when a new system loads, then drive it with set_fraction() from a QTimer.
+    """
+    _C_FULL = QColor(74, 158, 255)   # accent blue
+    _C_WARN = QColor(245, 158, 11)   # amber
+    _C_CRIT = QColor(239, 68, 68)    # red
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(4)
+        self._frac = 1.0
+
+    def set_fraction(self, frac: float):
+        self._frac = max(0.0, min(1.0, frac))
+        self.update()
+
+    @staticmethod
+    def _lerp(c1, c2, t):
+        t = max(0.0, min(1.0, t))
+        return QColor(
+            int(c1.red()   + (c2.red()   - c1.red())   * t),
+            int(c1.green() + (c2.green() - c1.green()) * t),
+            int(c1.blue()  + (c2.blue()  - c1.blue())  * t),
+        )
+
+    def _bar_color(self):
+        f = self._frac
+        if f >= 0.33:
+            return self._lerp(self._C_FULL, self._C_WARN, (1.0 - f) / 0.67)
+        else:
+            return self._lerp(self._C_WARN, self._C_CRIT, (0.33 - f) / 0.33)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        r = self.rect()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(Theme.FIELD)))
+        p.drawRect(r)
+        fw = max(0, int(r.width() * self._frac))
+        if fw > 0:
+            p.setBrush(QBrush(self._bar_color()))
+            p.drawRect(0, 0, fw, r.height())
+        p.end()
+
 
 # ─── Summary screen helper widgets ────────────────────────────────────────────
 
@@ -195,6 +250,109 @@ class _GradeRow(QWidget):
         lay.addSpacing(8)
         lay.addWidget(pl)
 
+
+class ReviewFetchThread(QThread):
+    """Fetches a single RGB thumbnail for the Review grid."""
+    thumbnail_ready = pyqtSignal(int, object)  # (idx, ndarray | None)
+
+    def __init__(self, inspection, idx, ra, dec, cutout_size=80):
+        super().__init__()
+        self._inspection = inspection
+        self._idx = idx
+        self._ra = ra
+        self._dec = dec
+        self._cutout_size = cutout_size
+
+    def run(self):
+        if self._inspection.is_cached(self._idx):
+            ok, rgb, _, _ = self._inspection.pull_from_cache(self._idx)
+            if ok and rgb is not None:
+                self.thumbnail_ready.emit(self._idx, rgb)
+                return
+        ok, arr = self._inspection.get_rgb_cutout(
+            self._ra, self._dec, cutout_size=self._cutout_size)
+        self.thumbnail_ready.emit(self._idx, arr if ok else None)
+
+
+class _ReviewCard(QWidget):
+    """A thumbnail card in the Review grid."""
+    clicked = pyqtSignal(int)
+    THUMB = 80
+
+    def __init__(self, idx, grade, parent=None):
+        super().__init__(parent)
+        self._idx = idx
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("reviewCard")
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setFixedWidth(self.THUMB + 12)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(4)
+
+        self._img_label = QLabel()
+        self._img_label.setFixedSize(self.THUMB, self.THUMB)
+        self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._img_label.setStyleSheet(
+            "background:#1a2d48; border-radius:5px; border:1px solid #2a3d5a;")
+
+        info = QHBoxLayout()
+        info.setContentsMargins(0, 0, 0, 0)
+        info.setSpacing(2)
+        sys_lbl = QLabel(f'#{idx + 1}')
+        sys_lbl.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:10px; background:transparent;")
+        grade_lbl = QLabel(grade)
+        grade_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        grade_lbl.setStyleSheet(
+            f"color:{Theme.ACCENT}; font-size:12px; font-weight:700; background:transparent;")
+        info.addWidget(sys_lbl)
+        info.addStretch()
+        info.addWidget(grade_lbl)
+
+        lay.addWidget(self._img_label)
+        lay.addLayout(info)
+
+        self._apply_style(hover=False)
+
+    def _apply_style(self, hover):
+        if hover:
+            self.setStyleSheet(
+                f"QWidget#reviewCard {{ background:#1a2d48; border:1px solid {Theme.ACCENT}; "
+                f"border-radius:8px; }}")
+        else:
+            self.setStyleSheet(
+                f"QWidget#reviewCard {{ background:#152238; border:1px solid {Theme.BORDER}; "
+                f"border-radius:8px; }}")
+
+    def set_image(self, arr):
+        if arr is None:
+            return
+        arr = np.ascontiguousarray(arr)
+        h, w = arr.shape[:2]
+        img = QImage(arr.data, w, h, w * 3, QImage.Format.Format_RGB888)
+        pix = QPixmap.fromImage(img).scaled(
+            self.THUMB, self.THUMB,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation)
+        self._img_label.setPixmap(pix)
+        self._img_label.setStyleSheet("background:transparent; border-radius:5px;")
+
+    def enterEvent(self, event):
+        self._apply_style(hover=True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._apply_style(hover=False)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._idx)
+        super().mousePressEvent(event)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 
 class StudioScreenWidget(QWidget):
@@ -269,9 +427,7 @@ class StudioScreenWidget(QWidget):
         self.system_N_tracker.jump_requested.connect(self._jump_to_system)
         self.save_status_widget = StatusWidget(text='Autosaving on', color='green', dot_size=12)
 
-        #Add items to bottom panel
-        self.bottom_panel.add_widget(self.previous_system_button)
-        self.bottom_panel.add_widget(self.next_system_button)
+        #Add items to bottom panel — built below after PaceBar is created
 
         #Add items to top panel
         self.top_panel.add_widget(self.save_status_widget,stretch=(False,True))
@@ -305,7 +461,29 @@ class StudioScreenWidget(QWidget):
         self.window_layout.addWidget(self.top_panel,1)
         # self.window_layout.addWidget(self.panels_container_widget,20)
         self.window_layout.addWidget(self.clipper, 20)
-        self.window_layout.addWidget(self.bottom_panel,2)
+
+        # Pace bar — sandwiched between Previous and Next buttons
+        self._pace_bar = PaceBar()
+        self._pace_bar.hide()
+        self._pace_start = 0.0
+        self._pace_elapsed_paused = 0.0
+        self._pace_timer = QTimer(self)
+        self._pace_timer.setInterval(100)
+        self._pace_timer.timeout.connect(self._pace_tick)
+
+        # Build bottom panel: [prev] [4 px bar, vertically centred] [next]
+        _pace_wrap = QWidget()
+        _pace_wrap.setStyleSheet("background: transparent;")
+        _pace_wrap_lay = QVBoxLayout(_pace_wrap)
+        _pace_wrap_lay.setContentsMargins(12, 0, 12, 0)
+        _pace_wrap_lay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        _pace_wrap_lay.addWidget(self._pace_bar)
+        self.bottom_panel.layout.setContentsMargins(14, 8, 14, 8)
+        self.bottom_panel.layout.addWidget(self.previous_system_button)
+        self.bottom_panel.layout.addWidget(_pace_wrap, 1)
+        self.bottom_panel.layout.addWidget(self.next_system_button)
+
+        self.window_layout.addWidget(self.bottom_panel, 2)
 
         # Settings window:
         self._create_settings_window()
@@ -314,6 +492,7 @@ class StudioScreenWidget(QWidget):
         self.current_inspection = Inspection(self.main_window)
         self.current_inspection.simulation_mode = False
         self.CSV_save_path = self.current_inspection.inspection_parameters['save directory']+f'/{self.current_inspection.inspection_parameters['new df name']}.csv'
+        save_recent(self.CSV_save_path)
 
         # Place-holder of screens for animation:
         self.screen_name_to_container = {
@@ -332,6 +511,8 @@ class StudioScreenWidget(QWidget):
     def _switch_screens(self,to_screen='settings'):
         if self.animating:
             return
+        if self.current_screen == 'inspection' and to_screen != 'inspection':
+            self._pace_pause()
         self.to_screen=to_screen
         self.screen_in, self.screen_out = self.screen_name_to_container[to_screen], self.screen_name_to_container[self.current_screen]
         self.animating = True
@@ -393,6 +574,7 @@ class StudioScreenWidget(QWidget):
             self.save_status_widget.show()
             self._apply_caps_lock_settings()
             self._rebuild_focus_order()
+            self._pace_resume()
             if hasattr(self, 'vo_thread') and self.voiceover_checkbox.checkbox.isChecked():
                 self.vo_thread.start_listening()
                 self._vo_idle_timer.start()
@@ -401,8 +583,10 @@ class StudioScreenWidget(QWidget):
                 self.vo_thread.stop_listening()
                 self._vo_idle_timer.stop()
                 self.voiceover_status_widget.hide()
-            if hasattr(self, '_summary_chart'):
+            if hasattr(self, '_sum_histogram'):
                 self._refresh_summary()
+            if hasattr(self, '_review_cards'):
+                self._refresh_review_grid()
         elif self.to_screen == 'settings':
             if hasattr(self, 'vo_thread'):
                 self.vo_thread.stop_listening()
@@ -438,9 +622,17 @@ class StudioScreenWidget(QWidget):
         self.settings_layout_container_widget.setLayout(self.settings_layout)
 
         #Populate the panels:
+        _settings_tab_icons = {
+            'Grades and Comments': OutlineIcon.WRITING,
+            'Quick Inspection':    OutlineIcon.BOLT,
+            'Navigation':          OutlineIcon.ROUTE,
+            'Appearance':          OutlineIcon.PALETTE,
+            'Info':                OutlineIcon.INFO_CIRCLE,
+        }
         self.settings_menu_tabs = StyledTabBar(self.dict_of_settings_menus,
                                                orientation='vertical',
-                                               add_stretches=True)
+                                               add_stretches=True,
+                                               icons=_settings_tab_icons)
         self.settings_menu_tabs.tab_clicked.connect(self._switch_setting_menu)
         self.settings_left_panel.add_widget(self.settings_menu_tabs,stretch=(False,True))
 
@@ -556,6 +748,10 @@ class StudioScreenWidget(QWidget):
                     self.blank_overlays[band_key].show()
 
     def set_up_inspection_layout(self):
+        # Apply default survey before fetching first images
+        _default_survey = str(self.Settings.get_setting('default_survey') or 'DR10')
+        self.current_inspection.set_survey(_default_survey.lower())
+
         #Images:
         success_dict, data_dict = self.current_inspection.get_current_images(idx=0)
 
@@ -651,7 +847,7 @@ class StudioScreenWidget(QWidget):
 
         self.dr_dropdown = QComboBox()
         self.dr_dropdown.addItems(['DR9', 'DR10', 'DR11'])
-        self.dr_dropdown.setCurrentText('DR10')
+        self.dr_dropdown.setCurrentText(_default_survey)
         self.dr_dropdown.setItemDelegate(QStyledItemDelegate(self.dr_dropdown))
         self.dr_dropdown.setFixedSize(110, 30)
         self.dr_dropdown.setStyleSheet(f"""
@@ -805,6 +1001,31 @@ class StudioScreenWidget(QWidget):
         self._mc_restore()
 
         self._start_prefetch(1)
+        self._pace_reset()
+
+    # ── Navigation helpers ────────────────────────────────────────────
+
+    def _update_nav_buttons(self):
+        loop = bool(self.Settings.get_setting('loop_at_end'))
+        self.previous_system_button.setEnabled(loop or self.current_idx > 0)
+        self.next_system_button.setEnabled(loop or self.current_idx < self.N_total_systems - 1)
+
+    def _warn_if_regrading(self, target_idx) -> bool:
+        if not bool(self.Settings.get_setting('warn_regrading')):
+            return True
+        grader = self.current_inspection.inspection_parameters['grader name']
+        grades_col = f'{grader}_grades'
+        df = self.main_window.df
+        if grades_col not in df.columns:
+            return True
+        existing = str(df.iloc[target_idx][grades_col]).strip()
+        if existing and existing != 'nan':
+            reply = self._warn(
+                'System Already Graded',
+                f'System #{target_idx + 1} already has grade "{existing}". Navigate to it?',
+                confirm=True)
+            return reply == QMessageBox.StandardButton.Yes
+        return True
 
     def activate_deactivate_quick_inspection(self,state):
         if state == Qt.CheckState.Checked.value:
@@ -854,6 +1075,56 @@ class StudioScreenWidget(QWidget):
     def _apply_caps_lock_settings(self):
         self.grade_input.set_caps_lock(bool(self.Settings.get_setting('caplock_grades')))
         self.comment_input.set_caps_lock(bool(self.Settings.get_setting('caplock_comments')))
+
+    # ── Pace timer ────────────────────────────────────────────────────
+
+    def _pace_reset(self):
+        """Start (or restart) the per-system countdown from full."""
+        pace = int(self.Settings.get_setting('pace_seconds') or 0)
+        if pace > 0:
+            self._pace_elapsed_paused = 0.0
+            self._pace_start = time.monotonic()
+            self._pace_bar.set_fraction(1.0)
+            self._pace_bar.show()
+            if not self._pace_timer.isActive():
+                self._pace_timer.start()
+        else:
+            self._pace_timer.stop()
+            self._pace_bar.hide()
+
+    def _pace_pause(self):
+        """Freeze the timer (e.g. user switched to settings/summary)."""
+        if self._pace_timer.isActive():
+            self._pace_elapsed_paused += time.monotonic() - self._pace_start
+            self._pace_timer.stop()
+        self._pace_bar.hide()
+
+    def _pace_resume(self):
+        """Unfreeze the timer when returning to the inspection screen."""
+        pace = int(self.Settings.get_setting('pace_seconds') or 0)
+        if pace <= 0:
+            return
+        elapsed = self._pace_elapsed_paused
+        if elapsed < pace:
+            self._pace_bar.set_fraction(max(0.0, 1.0 - elapsed / pace))
+            self._pace_bar.show()
+            self._pace_start = time.monotonic()
+            self._pace_timer.start()
+        else:
+            self._pace_bar.set_fraction(0.0)
+            self._pace_bar.show()
+
+    def _pace_tick(self):
+        pace = int(self.Settings.get_setting('pace_seconds') or 0)
+        if pace <= 0:
+            self._pace_timer.stop()
+            self._pace_bar.hide()
+            return
+        elapsed = self._pace_elapsed_paused + (time.monotonic() - self._pace_start)
+        frac = max(0.0, 1.0 - elapsed / pace)
+        self._pace_bar.set_fraction(frac)
+        if frac <= 0.0:
+            self._pace_timer.stop()
 
     # ── VoiceOver ─────────────────────────────────────────────────────
 
@@ -1043,41 +1314,57 @@ class StudioScreenWidget(QWidget):
     def load_next_system(self):
         if not self._validate_navigation():
             return
-        self.current_inspection.update_df({'grade':self.grade_input.get_content(), 'comment':self.comment_input.get_content()})
-        self.current_inspection.df_has_been_modified=True
+        loop = bool(self.Settings.get_setting('loop_at_end'))
+        if self.current_idx == self.N_total_systems - 1:
+            target = 0 if loop else None
+        else:
+            target = self.current_idx + 1
+        if target is None:
+            return
+        if not self._warn_if_regrading(target):
+            return
+        self.current_inspection.update_df({'grade': self.grade_input.get_content(), 'comment': self.comment_input.get_content()})
+        self.current_inspection.df_has_been_modified = True
         self.trigger_csv_save_thread()
-        if self.current_idx==0:
-            self.previous_system_button.setEnabled(True)
-        self.current_idx+=1
-        if self.current_idx == self.N_total_systems-1:
-            self.next_system_button.setEnabled(False)
+        self.current_idx = target
+        self._update_nav_buttons()
         self.update_onscreen_data()
         if self.quick_inspection_activated:
             self.focus_order[0].setFocus()
-            self.focus_i=0
+            self.focus_i = 0
 
     def load_previous_system(self):
         if not self._validate_navigation():
             return
-        self.current_inspection.update_df({'grade':self.grade_input.get_content(), 'comment':self.comment_input.get_content()})
-        if self.current_idx == self.N_total_systems-1:
-            self.next_system_button.setEnabled(True)
-        self.current_idx-=1
-        if self.current_idx==0:
-            self.previous_system_button.setEnabled(False)
+        loop = bool(self.Settings.get_setting('loop_at_end'))
+        if self.current_idx == 0:
+            target = self.N_total_systems - 1 if loop else None
+        else:
+            target = self.current_idx - 1
+        if target is None:
+            return
+        if not self._warn_if_regrading(target):
+            return
+        self.current_inspection.update_df({'grade': self.grade_input.get_content(), 'comment': self.comment_input.get_content()})
+        self.current_idx = target
+        self._update_nav_buttons()
         self.update_onscreen_data()
+        if self.quick_inspection_activated:
+            self.focus_order[0].setFocus()
+            self.focus_i = 0
 
-    def _jump_to_system(self, idx):
+    def _jump_to_system(self, idx, warn_regrading=True):
         if idx == self.current_idx:
             return
         if not self._validate_navigation():
+            return
+        if warn_regrading and not self._warn_if_regrading(idx):
             return
         self.current_inspection.update_df({'grade': self.grade_input.get_content(), 'comment': self.comment_input.get_content()})
         self.current_inspection.df_has_been_modified = True
         self.trigger_csv_save_thread()
         self.current_idx = idx
-        self.previous_system_button.setEnabled(self.current_idx > 0)
-        self.next_system_button.setEnabled(self.current_idx < self.N_total_systems - 1)
+        self._update_nav_buttons()
         self.update_onscreen_data()
         if self.quick_inspection_activated:
             self.focus_order[0].setFocus()
@@ -1112,7 +1399,17 @@ class StudioScreenWidget(QWidget):
             for var_n,var in enumerate(metadata['user selected data'].keys()):
                 self.custom_metadata_widgets[var_n].update_content(str(metadata['user selected data'][var]))
 
+        # Reset contrast sliders if setting is on
+        if bool(self.Settings.get_setting('reset_contrast_on_nav')) and hasattr(self, 'contrast_sliders'):
+            for slider in self.contrast_sliders.values():
+                slider.setValue(50)
+
         self._start_prefetch(self.current_idx + 1)
+        self._pace_reset()
+
+        # Keep summary stats in sync with current inspection state
+        if hasattr(self, '_sum_histogram'):
+            self._refresh_summary()
 
     # ── Einstein Radius measurement ──────────────────────────────────────────
 
@@ -1392,16 +1689,7 @@ class StudioScreenWidget(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(f"""
-            QScrollArea {{ background:transparent; border:none; }}
-            QScrollBar:vertical {{
-                background:{Theme.BG}; width:5px; border:none; margin:0;
-            }}
-            QScrollBar::handle:vertical {{
-                background:{Theme.BORDER}; border-radius:2px; min-height:20px;
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
-        """)
+        scroll.setStyleSheet(f"QScrollArea {{ background:transparent; border:none; }}" + SCROLLBAR_SS)
 
         inner = QWidget()
         inner.setStyleSheet("background:transparent;")
@@ -1410,6 +1698,31 @@ class StudioScreenWidget(QWidget):
         lay.setSpacing(0)
 
         grader = self.current_inspection.inspection_parameters['grader name']
+
+        # ── Section header helper (white text + blue accent bar) ──────────────
+        def _section_header(title):
+            w = QWidget()
+            w.setStyleSheet("background:transparent;")
+            h = QHBoxLayout(w)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(10)
+            bar = QFrame()
+            bar.setFixedSize(3, 22)
+            bar.setStyleSheet(f"background:{Theme.ACCENT}; border-radius:1px; border:none;")
+            lbl = QLabel(title)
+            lbl.setStyleSheet(
+                f"color:{Theme.TXT}; font-size:17px; font-weight:700; background:transparent;")
+            h.addWidget(bar)
+            h.addWidget(lbl)
+            h.addStretch()
+            return w
+
+        def _sep():
+            s = QFrame()
+            s.setFrameShape(QFrame.Shape.HLine)
+            s.setFixedHeight(1)
+            s.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
+            return s
 
         # ── Hero ─────────────────────────────────────────────────────────────
         grader_tag = QLabel(f'INSPECTED BY  {grader.upper()}')
@@ -1439,41 +1752,21 @@ class StudioScreenWidget(QWidget):
         lay.addSpacing(22)
         lay.addWidget(self._sum_prog)
 
-        # ── Divider ──────────────────────────────────────────────────────────
-        def _sep():
-            s = QFrame(); s.setFrameShape(QFrame.Shape.HLine)
-            s.setFixedHeight(1)
-            s.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
-            return s
-
         lay.addSpacing(36)
         lay.addWidget(_sep())
         lay.addSpacing(32)
 
-        # ── Histogram ────────────────────────────────────────────────────────
-        dist_hdr = QLabel('GRADE DISTRIBUTION')
-        dist_hdr.setStyleSheet(
-            f"color:{Theme.TXT_MUTE}; font-size:10px; font-weight:700;"
-            f" letter-spacing:2px; background:transparent;")
+        # ── Grade Distribution (histogram) ────────────────────────────────────
+        lay.addWidget(_section_header('Grade Distribution'))
+        lay.addSpacing(20)
         self._sum_histogram = _SummaryHistogram()
         self._sum_histogram.setFixedHeight(180)
-
-        lay.addWidget(dist_hdr)
-        lay.addSpacing(18)
         lay.addWidget(self._sum_histogram)
 
-        # ── Divider ──────────────────────────────────────────────────────────
-        lay.addSpacing(32)
-        lay.addWidget(_sep())
-        lay.addSpacing(32)
-
-        # ── Grade breakdown ───────────────────────────────────────────────────
-        breakdown_hdr = QLabel('GRADE BREAKDOWN')
-        breakdown_hdr.setStyleSheet(
-            f"color:{Theme.TXT_MUTE}; font-size:10px; font-weight:700;"
-            f" letter-spacing:2px; background:transparent;")
-        lay.addWidget(breakdown_hdr)
-        lay.addSpacing(18)
+        # ── Grade Breakdown (rows) ────────────────────────────────────────────
+        lay.addSpacing(28)
+        lay.addWidget(_section_header('Grade Breakdown'))
+        lay.addSpacing(16)
 
         self._sum_grades_container = QWidget()
         self._sum_grades_container.setStyleSheet("background:transparent;")
@@ -1482,21 +1775,121 @@ class StudioScreenWidget(QWidget):
         self._sum_grades_lay.setSpacing(0)
         lay.addWidget(self._sum_grades_container)
 
-        # ── Footer ────────────────────────────────────────────────────────────
+        # ── Measurements ──────────────────────────────────────────────────────
         lay.addSpacing(32)
         lay.addWidget(_sep())
-        lay.addSpacing(20)
+        lay.addSpacing(24)
+        lay.addWidget(_section_header('Measurements'))
+        lay.addSpacing(14)
 
-        self._sum_footer = QLabel('')
-        self._sum_footer.setStyleSheet(
+        badges_row = QHBoxLayout()
+        badges_row.setSpacing(12)
+        badges_row.setContentsMargins(0, 0, 0, 0)
+
+        self._sum_er_badge, self._sum_er_val_lbl = self._make_measurement_badge(
+            'ER Measurements', '0', OutlineIcon.RULER_MEASURE)
+        self._sum_ctr_badge, self._sum_ctr_val_lbl = self._make_measurement_badge(
+            'Center Marks', '0', OutlineIcon.CROSSHAIR)
+
+        badges_row.addWidget(self._sum_er_badge)
+        badges_row.addWidget(self._sum_ctr_badge)
+        badges_row.addStretch()
+        lay.addLayout(badges_row)
+
+        # ── Review ────────────────────────────────────────────────────────────
+        lay.addSpacing(32)
+        lay.addWidget(_sep())
+        lay.addSpacing(24)
+        lay.addWidget(_section_header('Review'))
+        lay.addSpacing(14)
+
+        # Grade chips
+        self._review_chips_row = QHBoxLayout()
+        self._review_chips_row.setSpacing(8)
+        self._review_chips_row.setContentsMargins(0, 0, 0, 0)
+        _chips_container = QWidget()
+        _chips_container.setStyleSheet("background:transparent;")
+        _chips_container.setLayout(self._review_chips_row)
+        lay.addWidget(_chips_container)
+
+        lay.addSpacing(10)
+
+        self._review_count_lbl = QLabel('')
+        self._review_count_lbl.setStyleSheet(
             f"color:{Theme.TXT_MUTE}; font-size:12px; background:transparent;")
-        self._sum_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(self._sum_footer)
+        lay.addWidget(self._review_count_lbl)
+
+        lay.addSpacing(16)
+
+        self._review_grid_widget = QWidget()
+        self._review_grid_widget.setStyleSheet("background:transparent;")
+        self._review_grid_layout = QGridLayout(self._review_grid_widget)
+        self._review_grid_layout.setContentsMargins(0, 0, 0, 0)
+        self._review_grid_layout.setSpacing(8)
+        lay.addWidget(self._review_grid_widget)
+
+        self._review_empty_lbl = QLabel('Grade some systems to see thumbnails here.')
+        self._review_empty_lbl.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:14px; background:transparent;")
+        self._review_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self._review_empty_lbl)
+
         lay.addStretch()
 
         scroll.setWidget(inner)
         outer.addWidget(scroll)
+
+        # Review state
+        self._review_selected_grades = set()
+        self._review_threads = {}
+        self._review_cards = {}
+        self._review_queue = []
+        self._review_chips = {}
+        self._review_chip_grades = []
+
         self._refresh_summary()
+
+    def _make_measurement_badge(self, label, value, icon_type):
+        badge = QFrame()
+        badge.setObjectName("measureBadge")
+        badge.setStyleSheet(f"""
+            QFrame#measureBadge {{
+                background:{Theme.CARD};
+                border:1px solid {Theme.BORDER};
+                border-radius:10px;
+            }}
+        """)
+        badge.setFixedHeight(68)
+        badge.setMinimumWidth(150)
+        lay = QHBoxLayout(badge)
+        lay.setContentsMargins(16, 10, 16, 10)
+        lay.setSpacing(12)
+
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(tabler_pixmap(icon_type, size=20, color=Theme.ACCENT))
+        icon_lbl.setFixedSize(24, 24)
+        icon_lbl.setScaledContents(True)
+        icon_lbl.setStyleSheet("background:transparent;")
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
+
+        val_lbl = QLabel(value)
+        val_lbl.setStyleSheet(
+            f"color:{Theme.TXT}; font-size:22px; font-weight:700; background:transparent;")
+
+        cap_lbl = QLabel(label)
+        cap_lbl.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; background:transparent;")
+
+        text_col.addWidget(val_lbl)
+        text_col.addWidget(cap_lbl)
+
+        lay.addWidget(icon_lbl)
+        lay.addLayout(text_col)
+
+        return badge, val_lbl
 
     def _refresh_summary(self):
         from collections import Counter
@@ -1555,24 +1948,166 @@ class StudioScreenWidget(QWidget):
                     sep.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
                     self._sum_grades_lay.addWidget(sep)
 
-        # Footer (ER / center counts)
+        # Measurement badges
         def _count_filled(col):
-            if col not in df.columns: return 0
+            if col not in df.columns:
+                return 0
             n = 0
             for v in df[col].values:
                 try:
                     f = float(v)
-                    if f == f: n += 1
-                except (ValueError, TypeError): pass
+                    if f == f:
+                        n += 1
+                except (ValueError, TypeError):
+                    pass
             return n
 
         er  = _count_filled(f'ER_arcsec_{grader}_VI')
         ctr = _count_filled(f'Center_RA_{grader}_VI')
-        parts = []
-        if er  > 0: parts.append(f'ER measurements: {er}')
-        if ctr > 0: parts.append(f'Center marks: {ctr}')
-        self._sum_footer.setText('  ·  '.join(parts) if parts else '')
-        self._sum_footer.setVisible(bool(parts))
+        self._sum_er_val_lbl.setText(str(er))
+        self._sum_ctr_val_lbl.setText(str(ctr))
+
+        # Rebuild review chips if grade distribution changed
+        new_grades = sorted(counts.keys())
+        if new_grades != self._review_chip_grades:
+            self._review_chip_grades = new_grades
+            self._rebuild_review_chips(new_grades)
+
+    # ── Review section ────────────────────────────────────────────────────────
+
+    def _rebuild_review_chips(self, grades):
+        while self._review_chips_row.count():
+            item = self._review_chips_row.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._review_chips.clear()
+        for grade in grades:
+            btn = QPushButton(grade)
+            btn.setFixedHeight(28)
+            btn.clicked.connect(lambda checked, g=grade: self._toggle_review_chip(g))
+            self._review_chips[grade] = btn
+            self._review_chips_row.addWidget(btn)
+        self._review_chips_row.addStretch()
+        self._review_selected_grades = set()
+        self._update_review_chip_styles()
+
+    def _update_review_chip_styles(self):
+        all_selected = len(self._review_selected_grades) == 0
+        for grade, btn in self._review_chips.items():
+            active = all_selected or grade in self._review_selected_grades
+            if active:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background:{Theme.ACCENT}; color:white; border:none;
+                        border-radius:12px; font-size:13px; font-weight:700;
+                        padding:2px 14px;
+                    }}
+                    QPushButton:hover {{ background:{Theme.ACCENT_HI}; }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background:transparent; color:{Theme.TXT_MUTE};
+                        border:1px solid {Theme.BORDER}; border-radius:12px;
+                        font-size:13px; font-weight:600; padding:2px 14px;
+                    }}
+                    QPushButton:hover {{
+                        background:#17273f; color:{Theme.TXT_SOFT};
+                        border-color:{Theme.FIELD_BRD};
+                    }}
+                """)
+
+    def _toggle_review_chip(self, grade):
+        if grade in self._review_selected_grades:
+            self._review_selected_grades.discard(grade)
+        else:
+            self._review_selected_grades.add(grade)
+        if len(self._review_selected_grades) == len(self._review_chips):
+            self._review_selected_grades = set()
+        self._update_review_chip_styles()
+        self._refresh_review_grid()
+
+    def _refresh_review_grid(self):
+        for t in list(self._review_threads.values()):
+            if t.isRunning():
+                t.quit()
+        self._review_threads.clear()
+
+        for card in list(self._review_cards.values()):
+            card.deleteLater()
+        self._review_cards.clear()
+
+        while self._review_grid_layout.count():
+            item = self._review_grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        grader = self.current_inspection.inspection_parameters['grader name']
+        grades_col = f'{grader}_grades'
+        df = self.main_window.df
+        matched = []
+        if grades_col in df.columns:
+            for i in range(len(df)):
+                g = str(df.iloc[i][grades_col]).strip()
+                if not g or g == 'nan':
+                    continue
+                if not self._review_selected_grades or g in self._review_selected_grades:
+                    matched.append((i, g))
+
+        count = len(matched)
+        if count == 0:
+            self._review_count_lbl.setText('')
+            self._review_empty_lbl.show()
+            self._review_grid_widget.hide()
+            return
+
+        plural = 'system' if count == 1 else 'systems'
+        self._review_count_lbl.setText(f'{count} {plural}')
+        self._review_empty_lbl.hide()
+        self._review_grid_widget.show()
+
+        COLS = 5
+        for grid_i, (idx, grade) in enumerate(matched):
+            card = _ReviewCard(idx, grade)
+            card.clicked.connect(self._on_review_card_click)
+            self._review_cards[idx] = card
+            row, col = divmod(grid_i, COLS)
+            self._review_grid_layout.addWidget(card, row, col)
+
+        self._review_queue = list(matched)
+        self._start_pending_review_fetches()
+
+    def _start_pending_review_fetches(self):
+        active = sum(1 for t in self._review_threads.values() if t.isRunning())
+        while active < 4 and self._review_queue:
+            idx, _ = self._review_queue.pop(0)
+            if idx in self._review_threads:
+                continue
+            ip = self.current_inspection.inspection_parameters
+            try:
+                ra  = float(self.main_window.df.iloc[idx][ip['ra column name']])
+                dec = float(self.main_window.df.iloc[idx][ip['dec column name']])
+            except (KeyError, ValueError, TypeError):
+                continue
+            t = ReviewFetchThread(self.current_inspection, idx, ra, dec, cutout_size=80)
+            t.thumbnail_ready.connect(self._on_review_thumbnail_ready)
+            t.finished.connect(lambda i=idx: self._on_review_fetch_done(i))
+            self._review_threads[idx] = t
+            t.start()
+            active += 1
+
+    def _on_review_thumbnail_ready(self, idx, arr):
+        if idx in self._review_cards:
+            self._review_cards[idx].set_image(arr)
+
+    def _on_review_fetch_done(self, idx):
+        self._review_threads.pop(idx, None)
+        self._start_pending_review_fetches()
+
+    def _on_review_card_click(self, idx):
+        self.screen_switch_tab_bar.set_active_tab('Studio')
+        self._switch_screens('inspection')
+        QTimer.singleShot(450, lambda: self._jump_to_system(idx, warn_regrading=False))
 
     # ── ER / MC restore ───────────────────────────────────────────────────────
 
@@ -1891,15 +2426,22 @@ class StudioScreenWidget(QWidget):
         return self._KEY_MAP.get(choice, (Qt.Key.Key_Return, Qt.Key.Key_Enter))
 
     def _advance_focus(self):
+        # Sync focus_i with actual keyboard focus before advancing, so that
+        # a manual click on a field doesn't leave the counter stale.
+        focused = QApplication.focusWidget()
+        for i, w in enumerate(self.focus_order):
+            # focusProxy() is set on StyledInputBox → resolves to text_edit
+            effective = w.focusProxy() if w.focusProxy() else w
+            if effective is focused or w is focused:
+                self.focus_i = i
+                break
+
         if self.focus_i == len(self.focus_order) - 1:
             if self.next_system_button.isEnabled():
                 self.next_system_button.click()
         else:
             self.focus_i += 1
             self.focus_order[self.focus_i].setFocus()
-
-        # self.focus_order = [self.grade_input,self.comment_input,self.next_system_button]
-        # self.focus_i = 0
 
 class SaveCSVWorker(QThread):
     finished = pyqtSignal()

@@ -1,16 +1,64 @@
 from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen,QIntValidator
-from Icons import tabler_pixmap, OutlineIcon
+from Icons import tabler_pixmap, tabler_icon, OutlineIcon
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QSize, Qt, QRectF, QRect, QEvent, pyqtSignal, QTimer
 import math
+import os
+from datetime import datetime, date
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
 import json
 import SettingsAssets
 import Theme
+
+# ── Recent files ───────────────────────────────────────────────────────────────
+
+_RECENT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recent_files.json')
+_MAX_RECENT  = 5
+
+
+def load_recent() -> list[dict]:
+    try:
+        with open(_RECENT_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_recent(path: str):
+    entries = [e for e in load_recent() if e['path'] != path]
+    entries.insert(0, {'path': path, 'opened_at': datetime.now().isoformat()})
+    entries = entries[:_MAX_RECENT]
+    try:
+        with open(_RECENT_PATH, 'w') as f:
+            json.dump(entries, f, indent=2)
+    except Exception:
+        pass
+
+
+def format_recent_date(iso: str) -> str:
+    try:
+        d = datetime.fromisoformat(iso).date()
+        delta = (date.today() - d).days
+        if delta == 0: return 'Today'
+        if delta == 1: return 'Yesterday'
+        return d.strftime('%b %-d')
+    except Exception:
+        return ''
+
+# Shared scrollbar style — thin, minimal, theme-colored.
+# Apply wherever a QScrollArea or QListWidget needs a non-native scrollbar.
+SCROLLBAR_SS = (
+    f"QScrollBar:vertical {{ background:transparent; width:5px; border:none; margin:0; }}"
+    f"QScrollBar::handle:vertical {{ background:{Theme.BORDER}; border-radius:2px; min-height:20px; }}"
+    f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}"
+    f"QScrollBar:horizontal {{ background:transparent; height:5px; border:none; margin:0; }}"
+    f"QScrollBar::handle:horizontal {{ background:{Theme.BORDER}; border-radius:2px; min-width:20px; }}"
+    f"QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}"
+)
 
 class CheckBox():
     def __init__(self,text,main_window,background_color=None):
@@ -253,27 +301,17 @@ class ScrollableList(QListWidget):
         for item in items:
             self.addItem(item)
         self.itemSelectionChanged.connect(connected_function)
-        self.style = """
-                                QListWidget {
-                                    background-color: #2e2e2e;  /* dark gray */
-                                    color: white;               /* white text */
-                                    border: 1px solid white;     /* white border */
-                                }
-                                QScrollBar:vertical {
-                                    background: #2e2e2e;
-                                    width: 12px;
-                                    margin: 0px;
-                                }
-                                QScrollBar::handle:vertical {
-                                    background: #555;
-                                    min-height: 20px;
-                                    border-radius: 4px;
-                                }
-                                QCheckBox {
-                                    color: white;
+        self.style = f"""
+                                QListWidget {{
+                                    background-color: {Theme.FIELD};
+                                    color: {Theme.TXT};
+                                    border: 1px solid {Theme.FIELD_BRD};
+                                }}
+                                QCheckBox {{
+                                    color: {Theme.TXT};
                                     background-color: transparent;
-                                }
-                            """
+                                }}
+                            """ + SCROLLBAR_SS
         self.setStyleSheet(self.style)
 
 
@@ -467,10 +505,10 @@ class ScrollPanel(QFrame):
         self._apply_stylesheet()
 
     def _apply_stylesheet(self):
-        self.setStyleSheet("""
+        self.setStyleSheet(f"""
             QFrame {{
-                background-color: #152238;
-                border-radius: {r}px;
+                background-color: {Theme.CARD};
+                border-radius: {self.border_radius}px;
                 padding: 0px;
             }}
             QScrollArea {{
@@ -483,7 +521,7 @@ class ScrollPanel(QFrame):
                 color: white;
                 padding: 8px;
             }}
-        """.format(r=self.border_radius))
+        """ + SCROLLBAR_SS)
 
     def add_title(self, title='No title', center_title=False):
         self.title_widget = QLabel(title)
@@ -616,6 +654,10 @@ class StyledInputBox(QWidget):
         self.text_edit = QTextEdit()
         self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
         self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)
+
+        # Forward setFocus() calls to the inner editor so event filters installed
+        # on text_edit receive key events regardless of which object focus was set on.
+        self.setFocusProxy(self.text_edit)
 
         outer.addLayout(title_row)
         outer.addWidget(self.text_edit)
@@ -816,7 +858,8 @@ class StyledToggleSwitch(QCheckBox):
 class StyledTabBar(QWidget):
     tab_clicked = pyqtSignal(str)  # emits the name of the clicked tab
 
-    def __init__(self, tab_names: dict, orientation='horizontal',add_stretches=False,parent=None):
+    def __init__(self, tab_names: dict, orientation='horizontal', add_stretches=False,
+                 icons: dict = None, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("""
@@ -830,25 +873,28 @@ class StyledTabBar(QWidget):
         self.tab_names = list(self.tab_names_signals_dict.keys())
         self.active_tab = self.tab_names[0]
         self.buttons = {}
+        self._icons = icons or {}
 
-        self.orientation=orientation
+        self.orientation = orientation
 
-        if self.orientation=='horizontal':
+        if self.orientation == 'horizontal':
             layout = QHBoxLayout()
-        elif self.orientation=='vertical':
+        elif self.orientation == 'vertical':
             layout = QVBoxLayout()
 
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
         self.setLayout(layout)
 
-        for tab_n,name in enumerate(tab_names):
+        for tab_n, name in enumerate(tab_names):
             btn = QPushButton(name)
             btn.setCheckable(False)
             btn.clicked.connect(lambda checked, n=name: self._on_tab_clicked(n))
+            if name in self._icons:
+                btn.setIconSize(QSize(16, 16))
             self.buttons[name] = btn
             layout.addWidget(btn)
-            if add_stretches and tab_n<len(tab_names)-1:
+            if add_stretches and tab_n < len(tab_names) - 1:
                 layout.addStretch()
         if orientation == 'vertical' and add_stretches:
             layout.addStretch()
@@ -867,7 +913,9 @@ class StyledTabBar(QWidget):
         self._update_styles()
 
     def _update_styles(self):
-        if self.orientation=='horizontal':
+        has_icons = bool(self._icons)
+        icon_padding = "padding: 6px 14px 6px 10px; text-align: left;" if has_icons and self.orientation == 'vertical' else "padding: 6px 14px;"
+        if self.orientation == 'horizontal':
             active_style = f"""
                 QPushButton {{
                     background-color: {Theme.ACCENT};
@@ -888,7 +936,7 @@ class StyledTabBar(QWidget):
                     color: white;
                     font-size: 15px;
                     font-weight: 600;
-                    padding: 6px 14px;
+                    {icon_padding}
                     border: none;
                 }}
                 QPushButton:hover {{ background-color: {Theme.ACCENT_HI}; }}
@@ -900,13 +948,17 @@ class StyledTabBar(QWidget):
                 color: {Theme.TXT_MUTE};
                 font-size: 15px;
                 font-weight: 600;
-                padding: 6px 14px;
+                {icon_padding}
                 border: none;
             }}
             QPushButton:hover {{ background-color: #17273f; color: {Theme.TXT_SOFT}; }}
         """
         for name, btn in self.buttons.items():
-            btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)
+            is_active = (name == self.active_tab)
+            btn.setStyleSheet(active_style if is_active else inactive_style)
+            if name in self._icons:
+                color = "#ffffff" if is_active else Theme.TXT_MUTE
+                btn.setIcon(tabler_icon(self._icons[name], size=16, color=color))
 
 
 class StyledGroupBox(QGroupBox):
@@ -995,8 +1047,6 @@ class InspectionSettings:
         for widget_name in all_names:
             if widget_name in existing_widgets_names:
                 self.config_file_json[widget_name] = self.name_to_widget_map[widget_name].get_status()
-            else:
-                print(f'{widget_name} does not exist in the UI')
 
         with open(self.config_file_path,'w') as old_config_file:
             json.dump(self.config_file_json, old_config_file, indent=4)
@@ -1041,6 +1091,15 @@ class InspectionSettings:
             widget=SettingsAssets.DraggableOrderList()
         elif widget_info['type']=='section label':
             widget=SettingsAssets.SectionLabel(widget_info['label'], widget_info.get('caption'))
+        elif widget_info['type'] == 'number input':
+            widget = SettingsAssets.NumberInput(
+                label=widget_info['label'],
+                caption=widget_info.get('caption'),
+                minimum=widget_info.get('minimum', 0),
+                maximum=widget_info.get('maximum', 300),
+                suffix=widget_info.get('suffix', 'sec'),
+                step=widget_info.get('step', 15),
+            )
 
         if widget:
             if 'name' in widget_info:
