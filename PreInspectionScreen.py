@@ -596,10 +596,16 @@ class PreInspectionWidget(QWidget):
             show_popup_window(title="An input field contains an error:", text=error_message, header_icon_path=None)
 
     def prepare_df_columns(self):
-        if self.inspection_parameters['grader name'] + "_grades" not in self.df_existing_columns:
-            self.main_window.df[self.inspection_parameters['grader name'] + "_grades"] = ""
-        if self.inspection_parameters['grader name'] + "_comments" not in self.df_existing_columns:
-            self.main_window.df[self.inspection_parameters['grader name'] + "_comments"] = ""
+        grade_col   = self.inspection_parameters['grader name'] + "_grades"
+        comment_col = self.inspection_parameters['grader name'] + "_comments"
+        if grade_col not in self.df_existing_columns:
+            self.main_window.df[grade_col] = ""
+        if comment_col not in self.df_existing_columns:
+            self.main_window.df[comment_col] = ""
+        # Pandas infers float64 for all-NaN columns loaded from CSV; cast to
+        # object so empty-string assignments during inspection don't fail.
+        self.main_window.df[grade_col]   = self.main_window.df[grade_col].astype(object)
+        self.main_window.df[comment_col] = self.main_window.df[comment_col].astype(object)
 
     def compile_all_entries(self):
         # Inspector information

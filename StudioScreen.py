@@ -16,7 +16,7 @@ from Icons import tabler_icon, tabler_pixmap, badge_pixmap, OutlineIcon, ICON_WH
 try:
     from VoiceOverEngine import VoiceOverThread
     _VOICEOVER_AVAILABLE = True
-except ImportError:
+except Exception:
     _VOICEOVER_AVAILABLE = False
 
 PRIMARY_BTN = f"""
