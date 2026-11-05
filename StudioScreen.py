@@ -16,8 +16,9 @@ from Icons import tabler_icon, tabler_pixmap, badge_pixmap, OutlineIcon, ICON_WH
 try:
     from VoiceOverEngine import VoiceOverThread
     _VOICEOVER_AVAILABLE = True
-except Exception:
+except Exception as _vo_import_err:
     _VOICEOVER_AVAILABLE = False
+    print(f"[VoiceOver] import failed: {_vo_import_err}")
 
 PRIMARY_BTN = f"""
 QPushButton {{ background-color:{Theme.ACCENT}; color:white; border:none; border-radius:8px;
