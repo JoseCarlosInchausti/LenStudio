@@ -10,13 +10,8 @@ class LenStudio(QMainWindow):
     def __init__(self):
         # Set up parameters
         self.APP_NAME = "LenStudio"
-        self.GRAPHICS_ADDRESSES = {"taskbar icon":"Graphics/4x/Logo.png","open csv unclicked":"Graphics/Buttons/1x/Asset 9.png","open csv clicked":"Graphics/Buttons/1x/Asset 10.png",
-                                   "large app icon":"Graphics/Icons/SVG/SVG/Asset 13.svg","small app icon":"Graphics/SVG/Asset 19.svg", #"small app icon":"Graphics/Icons/SVG/Asset 3.svg",
-                                   "return home unclicked":"Graphics/Buttons/1x/Asset 4.png","return home clicked":"Graphics/Buttons/1x/Asset 7.png",
-                                   "start inspection unclicked":"Graphics/Buttons/1x/Asset 5.png","start inspection clicked":"Graphics/Buttons/1x/Asset 8.png",
-                                   "inspection background":"Graphics/Icons/SVG/SVG/Asset 14.svg",
-                                   "next image unclicked":"Graphics/SVG/Asset 21.svg","next image clicked":"Graphics/SVG/Asset 11.svg",
-                                   "previous image unclicked":"Graphics/SVG/Asset 22.svg","previous image clicked":"Graphics/SVG/Asset 12.svg"}
+        self.GRAPHICS_ADDRESSES = {"taskbar icon": "assets/logo.png",
+                                   "large app icon": "assets/logo.svg"}
         self.FONT_SIZES = {"input box labels":15}
         self.COLOR_PALETTE = {"frame background":'#152238'}
         self.csv_path = None
