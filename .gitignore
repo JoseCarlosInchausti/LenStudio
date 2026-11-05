@@ -21,8 +21,9 @@ tests.py
 # Jupyter notebooks
 *.ipynb
 
-# Markdown files
+# Markdown files (except README)
 *.md
+!README.md
 
 # Generated assets
 _combo_arrow.png

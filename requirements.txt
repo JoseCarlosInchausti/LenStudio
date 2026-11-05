@@ -1,0 +1,8 @@
+PyQt6>=6.9
+pyqtgraph>=0.13
+numpy>=2.0
+astropy>=7.0
+Pillow>=11.0
+requests>=2.32
+pytablericons>=1.0
+pandas>=2.0
