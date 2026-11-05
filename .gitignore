@@ -16,6 +16,13 @@ settings-state.txt
 # Dead / temp files
 Main_temp.py
 StudioScreen v1.py
+tests.py
+
+# Jupyter notebooks
+*.ipynb
+
+# Markdown files
+*.md
 
 # Generated assets
 _combo_arrow.png
