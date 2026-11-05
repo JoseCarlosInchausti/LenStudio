@@ -6,3 +6,8 @@ Pillow>=11.0
 requests>=2.32
 pytablericons>=1.0
 pandas>=2.0
+
+# Optional — required only for VoiceOver mode
+# On Windows use: pip install webrtcvad-wheels
+pyaudio>=0.2.14
+webrtcvad>=2.0.10

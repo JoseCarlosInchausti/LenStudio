@@ -13,7 +13,11 @@ from Assets import Panel,SvgWidget, ImageWidget, StyledTextBox, MetadataField, C
 from InspectionEngine import Inspection, PrefetchThread
 import Theme
 from Icons import tabler_icon, tabler_pixmap, badge_pixmap, OutlineIcon, ICON_WHITE, ICON_SOFT
-from VoiceOverEngine import VoiceOverThread
+try:
+    from VoiceOverEngine import VoiceOverThread
+    _VOICEOVER_AVAILABLE = True
+except ImportError:
+    _VOICEOVER_AVAILABLE = False
 
 PRIMARY_BTN = f"""
 QPushButton {{ background-color:{Theme.ACCENT}; color:white; border:none; border-radius:8px;
@@ -610,11 +614,11 @@ class StudioScreenWidget(QWidget):
             self._apply_caps_lock_settings()
             self._rebuild_focus_order()
             self._pace_resume()
-            if hasattr(self, 'vo_thread') and self.voiceover_checkbox.checkbox.isChecked():
+            if self.vo_thread is not None and self.voiceover_checkbox.checkbox.isChecked():
                 self.vo_thread.start_listening()
                 self._vo_idle_timer.start()
         elif self.to_screen == 'summary':
-            if hasattr(self, 'vo_thread'):
+            if self.vo_thread is not None:
                 self.vo_thread.stop_listening()
                 self._vo_idle_timer.stop()
                 self.voiceover_status_widget.hide()
@@ -1019,13 +1023,18 @@ class StudioScreenWidget(QWidget):
 
         # VoiceOver thread (starts/stops when checkbox is toggled)
         self._voiceover_consent_given = False
-        self.vo_thread = VoiceOverThread(model_size='base', parent=self)
-        self.vo_thread.listening.connect(self._on_vo_listening)
-        self.vo_thread.processing.connect(self._on_vo_processing)
-        self.vo_thread.transcript_ready.connect(self._on_vo_transcript)
-        self.vo_thread.status_update.connect(self._on_vo_status)
-        self.vo_thread.command_parsed.connect(self._handle_voice_command)
-        self.vo_thread.error.connect(self._on_vo_error)
+        if _VOICEOVER_AVAILABLE:
+            self.vo_thread = VoiceOverThread(model_size='base', parent=self)
+            self.vo_thread.listening.connect(self._on_vo_listening)
+            self.vo_thread.processing.connect(self._on_vo_processing)
+            self.vo_thread.transcript_ready.connect(self._on_vo_transcript)
+            self.vo_thread.status_update.connect(self._on_vo_status)
+            self.vo_thread.command_parsed.connect(self._handle_voice_command)
+            self.vo_thread.error.connect(self._on_vo_error)
+        else:
+            self.vo_thread = None
+            self.voiceover_checkbox.checkbox.setEnabled(False)
+            self.voiceover_checkbox.checkbox.setToolTip("VoiceOver requires pyaudio and webrtcvad")
 
         # Idle auto-off: turns VoiceOver off after 60 s with no recognised command
         self._vo_idle_timer = QTimer(self)
@@ -1172,6 +1181,8 @@ class StudioScreenWidget(QWidget):
     # ── VoiceOver ─────────────────────────────────────────────────────
 
     def _toggle_voiceover(self, state):
+        if self.vo_thread is None:
+            return
         if state == Qt.CheckState.Checked.value:
             if not self._voiceover_consent_given and not self._show_voiceover_consent():
                 self.voiceover_checkbox.checkbox.blockSignals(True)
