@@ -627,7 +627,7 @@ class StudioScreenWidget(QWidget):
             if hasattr(self, '_review_cards'):
                 self._refresh_review_grid()
         elif self.to_screen == 'settings':
-            if hasattr(self, 'vo_thread'):
+            if self.vo_thread is not None:
                 self.vo_thread.stop_listening()
                 self._vo_idle_timer.stop()
                 self.voiceover_status_widget.hide()
@@ -1400,6 +1400,8 @@ class StudioScreenWidget(QWidget):
         dlg.exec()
 
     def _vo_idle_timeout(self):
+        if self.vo_thread is None:
+            return
         self.voiceover_checkbox.checkbox.blockSignals(True)
         self.voiceover_checkbox.checkbox.setChecked(False)
         self.voiceover_checkbox.checkbox.blockSignals(False)
