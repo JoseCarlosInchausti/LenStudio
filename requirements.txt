@@ -1,4 +1,4 @@
-PyQt6>=6.9
+PyQt6==6.7.1
 pyqtgraph>=0.13
 numpy>=2.0
 astropy>=7.0
