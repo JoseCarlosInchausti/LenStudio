@@ -1122,10 +1122,14 @@ class InspectionSettings:
     def __init__(self,desing_file_path, config_file_path):
         self.desing_file_path, self.config_file_path = desing_file_path, config_file_path
 
-        #Get design of menus
         with open(desing_file_path,'r') as design_file:
             self.desing_file_json = json.load(design_file)
-        #Get configuration file
+
+        if not os.path.exists(config_file_path):
+            import shutil
+            default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings-default.json')
+            shutil.copy(default_path, config_file_path)
+
         with open(config_file_path,'r') as config_file:
             self.config_file_json = json.load(config_file)
 
