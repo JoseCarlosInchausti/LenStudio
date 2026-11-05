@@ -565,21 +565,16 @@ class InfoPage(StyledEmptyWidget):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(14)
 
-        # ── Intro ────────────────────────────────────────────────────
-        outer.addWidget(self._section_header("DESI LEGACY IMAGING SURVEYS"))
-
-        intro = QLabel(
+        # ── DESI Legacy Imaging Surveys ──────────────────────────────
+        surveys_box, surveys_lay = self._group_box("DESI Legacy Imaging Surveys")
+        surveys_lay.addWidget(SectionLabel(
+            "About this data",
             "LenStudio connects to and displays public imaging data from the DESI Legacy "
             "Imaging Surveys (legacysurvey.org) at runtime. No survey data is bundled "
             "with this software — images are fetched directly from Legacy Survey servers "
             "and remain the property of their respective institutions. "
-            "The surveys' official acknowledgement is reproduced below.")
-        intro.setWordWrap(True)
-        intro.setStyleSheet(
-            f"color:{Theme.TXT_SOFT}; font-size:13px; background:transparent;")
-        outer.addWidget(intro)
-
-        # ── Acknowledgement text ─────────────────────────────────────
+            "The surveys' official acknowledgement is reproduced below."
+        ))
         self._ack_box = QTextEdit()
         self._ack_box.setPlainText(_LS_ACK)
         self._ack_box.setReadOnly(True)
@@ -594,34 +589,27 @@ class InfoPage(StyledEmptyWidget):
                 padding: 10px 12px;
             }}
         """)
-        outer.addWidget(self._ack_box)
+        surveys_lay.addWidget(self._indented(self._ack_box))
+        ack_btn = self._link_button("View official acknowledgement  →")
+        ack_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self._ACK_URL)))
+        surveys_lay.addWidget(self._indented(ack_btn, stretch=True))
+        outer.addWidget(surveys_box)
 
-        link_btn = self._secondary_button("View official acknowledgement  →", accent=True)
-        link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self._ACK_URL)))
-        outer.addWidget(link_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
-        # ── Image licence (CC BY 4.0) ─────────────────────────────────
-        outer.addWidget(self._section_header("IMAGE LICENSE"))
-
-        licence_card = self._citation_card(
+        # ── Image License ────────────────────────────────────────────
+        licence_box, licence_lay = self._group_box("Image License")
+        licence_lay.addWidget(self._citation_entry(
             authors="Legacy Surveys / D. Lang (Perimeter Institute)",
-            year="",
             title="Sky viewer cutout images are licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).",
-            journal="",
-            volume_page="",
-            arxiv="",
-        )
-        outer.addWidget(licence_card)
-
-        cc_btn = self._secondary_button("View CC BY 4.0 licence  →", accent=True)
+        ))
+        cc_btn = self._link_button("View CC BY 4.0 licence  →")
         cc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://creativecommons.org/licenses/by/4.0/")))
-        outer.addWidget(cc_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        licence_lay.addWidget(self._indented(cc_btn, stretch=True))
+        outer.addWidget(licence_box)
 
-        # ── Survey overview paper ─────────────────────────────────────
-        outer.addWidget(self._section_header("SURVEY OVERVIEW PAPER"))
-
-        outer.addWidget(self._citation_card(
+        # ── Survey Overview Paper ─────────────────────────────────────
+        paper_box, paper_lay = self._group_box("Survey Overview Paper")
+        paper_lay.addWidget(self._citation_entry(
             authors="Dey, A., Schlegel, D. J., Lang, D., et al.",
             year="2019",
             title="Overview of the DESI Legacy Imaging Surveys",
@@ -629,57 +617,72 @@ class InfoPage(StyledEmptyWidget):
             volume_page="157, 168",
             arxiv="arXiv:1804.08657",
         ))
+        outer.addWidget(paper_box)
+
+        # ── Citing LenStudio ─────────────────────────────────────────
+        cite_box, cite_lay = self._group_box("Citing LenStudio")
+        cite_lay.addWidget(SectionLabel(
+            "If you use LenStudio in published research, please cite:"
+        ))
+        cite_lay.addWidget(self._citation_entry(
+            authors="Inchausti, J. C.",
+            year="2026",
+            title="LenStudio: A visual inspection tool for the DESI Legacy Imaging Surveys",
+        ))
+        outer.addWidget(cite_box)
 
         outer.addStretch()
 
     # ── Helpers ──────────────────────────────────────────────────────
 
-    def _section_header(self, title, caption=None):
+    def _group_box(self, title):
+        """QGroupBox styled to match StyledGroupBox used in other settings tabs."""
+        box = QGroupBox(title)
+        box.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {Theme.BORDER};
+                border-radius: 8px;
+                margin-top: 10px;
+                background-color: {Theme.CARD};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 8px;
+                padding: 0 4px;
+                background-color: {Theme.CARD};
+                color: {Theme.TXT_MUTE};
+                top: -1px;
+            }}
+        """)
+        inner = QVBoxLayout(box)
+        inner.setContentsMargins(4, 5, 4, 5)
+        inner.setSpacing(6)
+        return box, inner
+
+    def _indented(self, widget, indent=30, stretch=False):
+        """Wrap a widget with a left indent to align with SectionLabel content."""
         w = QWidget()
         w.setStyleSheet("background: transparent;")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
-        lbl = QLabel(title)
-        lbl.setStyleSheet(
-            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700;"
-            f" letter-spacing:0.7px; background:transparent;")
-        lay.addWidget(lbl)
-        if caption:
-            cap = QLabel(caption)
-            cap.setWordWrap(True)
-            cap.setStyleSheet(
-                f"color:{Theme.TXT_MUTE}; font-size:12px; background:transparent;")
-            lay.addWidget(cap)
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addSpacing(indent)
+        row.addWidget(widget)
+        if stretch:
+            row.addStretch()
         return w
 
-    def _secondary_button(self, text, accent=False):
-        btn = QPushButton(text)
-        color = Theme.ACCENT if accent else Theme.TXT
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #1c2a42; color: {color};
-                border: 1px solid #33425c; border-radius: 8px;
-                font-size: 13px; font-weight: 600; padding: 6px 16px;
-            }}
-            QPushButton:hover {{ background-color: #243a5a; }}
-            QPushButton:pressed {{ background-color: #182942; }}
-        """)
-        return btn
-
-    def _citation_card(self, authors, year, title, journal, volume_page, arxiv):
-        card = QFrame()
-        card.setObjectName("citationCard")
-        card.setStyleSheet(f"""
-            QFrame#citationCard {{
-                background-color: {Theme.CARD};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-            }}
-        """)
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(16, 14, 16, 14)
-        lay.setSpacing(4)
+    def _citation_entry(self, authors, year="", title="", journal="", volume_page="", arxiv=""):
+        """Flat citation display (no card frame) with 30-px left indent."""
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addSpacing(30)
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(2)
+        row.addLayout(col, 1)
 
         year_span = f"  <span style='color:{Theme.TXT_MUTE};font-weight:400'>{year}</span>" if year else ""
         author_lbl = QLabel(f"{authors}{year_span}")
@@ -687,7 +690,7 @@ class InfoPage(StyledEmptyWidget):
             f"color:{Theme.TXT}; font-size:14px; font-weight:700; background:transparent;")
         author_lbl.setTextFormat(Qt.TextFormat.RichText)
         author_lbl.setWordWrap(True)
-        lay.addWidget(author_lbl)
+        col.addWidget(author_lbl)
 
         if title:
             title_lbl = QLabel(f"<i>{title}</i>")
@@ -695,7 +698,7 @@ class InfoPage(StyledEmptyWidget):
             title_lbl.setStyleSheet(
                 f"color:{Theme.TXT_SOFT}; font-size:13px; background:transparent;")
             title_lbl.setTextFormat(Qt.TextFormat.RichText)
-            lay.addWidget(title_lbl)
+            col.addWidget(title_lbl)
 
         journal_parts = [p for p in [
             f"{journal}, {volume_page}".strip(", ") if journal else "",
@@ -705,5 +708,18 @@ class InfoPage(StyledEmptyWidget):
             journal_lbl = QLabel("  ·  ".join(journal_parts))
             journal_lbl.setStyleSheet(
                 f"color:{Theme.TXT_MUTE}; font-size:12px; background:transparent;")
-            lay.addWidget(journal_lbl)
-        return card
+            col.addWidget(journal_lbl)
+        return w
+
+    def _link_button(self, text):
+        btn = QPushButton(text)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1c2a42; color: {Theme.ACCENT};
+                border: 1px solid #33425c; border-radius: 8px;
+                font-size: 13px; font-weight: 600; padding: 6px 16px;
+            }}
+            QPushButton:hover {{ background-color: #243a5a; }}
+            QPushButton:pressed {{ background-color: #182942; }}
+        """)
+        return btn

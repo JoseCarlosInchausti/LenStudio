@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QFileDialog, QPushButton, QListWidget, QListWidgetI
                              QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox,
                              QLineEdit, QScrollArea, QFrame, QStackedWidget, QHeaderView,
-                             QStyledItemDelegate)
+                             QStyledItemDelegate, QDialog, QListView, QTreeView)
 from PyQt6.QtCore import Qt, QSize
 import numpy as np
 import re
@@ -24,6 +24,54 @@ WARN      = "#ffb454"   # overwrite warning
 TXT       = "#e8edf5"   # primary text
 TXT_SOFT  = "#c3cde0"   # labels
 TXT_MUTE  = "#8a99b3"   # captions
+
+_FOLDER_DLG_SS = f"""
+    QFileDialog, QDialog {{
+        background:{CARD}; color:{TXT};
+    }}
+    QFileDialog QLabel {{ color:{TXT}; background:transparent; }}
+    QFileDialog QLineEdit {{
+        background:{FIELD}; color:{TXT}; border:1px solid {FIELD_BRD};
+        border-radius:6px; padding:4px 8px;
+    }}
+    QFileDialog QPushButton {{
+        background:{ACCENT}; color:white; border:none;
+        border-radius:6px; padding:5px 14px; font-weight:600;
+    }}
+    QFileDialog QPushButton:hover {{ background:#5fb0ff; }}
+    QFileDialog QPushButton[text="Cancel"] {{
+        background:transparent; color:{TXT_SOFT}; border:1px solid {BORDER};
+    }}
+    QFileDialog QPushButton[text="Cancel"]:hover {{ border-color:{FIELD_BRD}; color:{TXT}; }}
+    QFileDialog QComboBox {{
+        background:{FIELD}; color:{TXT}; border:1px solid {FIELD_BRD}; border-radius:6px; padding:3px 8px;
+    }}
+    QFileDialog QComboBox QAbstractItemView {{
+        background:{CARD}; color:{TXT}; selection-background-color:{ACCENT};
+    }}
+    QFileDialog QHeaderView::section {{
+        background:BG; color:{TXT_MUTE}; border:none; padding:4px;
+    }}
+    QFileDialog QListView, QFileDialog QTreeView {{
+        background:{CARD}; color:{TXT}; border:1px solid {BORDER}; border-radius:6px;
+    }}
+    QFileDialog QListView::item:selected, QFileDialog QTreeView::item:selected {{
+        background:{ACCENT}; color:white;
+    }}
+    QFileDialog QSplitter {{ background:{BG}; }}
+    QFileDialog QScrollBar:vertical {{
+        background:transparent; width:5px; border:none;
+    }}
+    QFileDialog QScrollBar::handle:vertical {{
+        background:{BORDER}; border-radius:2px; min-height:20px;
+    }}
+    QFileDialog QScrollBar::add-line:vertical,
+    QFileDialog QScrollBar::sub-line:vertical {{ height:0; }}
+    QFileDialog QToolButton {{
+        background:transparent; color:{TXT_SOFT}; border:none;
+    }}
+    QFileDialog QToolButton:hover {{ color:{TXT}; }}
+"""
 
 QSS = f"""
 QWidget#preInspectionPage {{ background-color: {BG}; }}
@@ -340,8 +388,8 @@ class PreInspectionWidget(QWidget):
         self.dec_combo = self._make_combo(self.df_existing_columns, dec_idx)
         row = QHBoxLayout()
         row.setSpacing(16)
-        row.addLayout(self._labeled("R.A. column", self.ra_combo), 1)
-        row.addLayout(self._labeled("Dec. column", self.dec_combo), 1)
+        row.addLayout(self._labeled("R.A. column [deg]", self.ra_combo), 1)
+        row.addLayout(self._labeled("Dec. column [deg]", self.dec_combo), 1)
         lay.addLayout(row)
         return card
 
@@ -368,7 +416,7 @@ class PreInspectionWidget(QWidget):
         lay.addWidget(self.columns_list)
 
         foot = QHBoxLayout()
-        self.col_count_label = QLabel("0 selected")
+        self.col_count_label = QLabel("0 / 3 selected")
         self.col_count_label.setObjectName("caption")
         foot.addWidget(self.col_count_label)
         foot.addStretch()
@@ -386,10 +434,17 @@ class PreInspectionWidget(QWidget):
             item = self.columns_list.item(i)
             item.setHidden(text not in item.text().lower())
 
-    def _update_col_count(self):
+    def _update_col_count(self, item=None):
+        if item is not None and item.checkState() == Qt.CheckState.Checked:
+            n = sum(1 for i in range(self.columns_list.count())
+                    if self.columns_list.item(i).checkState() == Qt.CheckState.Checked)
+            if n > 3:
+                self.columns_list.blockSignals(True)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.columns_list.blockSignals(False)
         n = sum(1 for i in range(self.columns_list.count())
                 if self.columns_list.item(i).checkState() == Qt.CheckState.Checked)
-        self.col_count_label.setText(f"{n} selected")
+        self.col_count_label.setText(f"{n} / 3 selected")
 
     def _clear_columns(self):
         for i in range(self.columns_list.count()):
@@ -483,10 +538,20 @@ class PreInspectionWidget(QWidget):
 
     # ------------------------------------------------------------- behaviour
     def open_file_browser(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select a folder", self.save_directory or "")
-        if folder_path:
-            self.save_directory = folder_path
-            self.folder_display.setText(folder_path)
+        dlg = QFileDialog(self, "Choose save folder")
+        dlg.setFileMode(QFileDialog.FileMode.Directory)
+        dlg.setOption(QFileDialog.Option.DontUseNativeDialog)
+        dlg.setOption(QFileDialog.Option.ShowDirsOnly)
+        if self.save_directory:
+            dlg.setDirectory(self.save_directory)
+        dlg.setStyleSheet(_FOLDER_DLG_SS)
+        for view in dlg.findChildren((QListView, QTreeView)):
+            view.setStyleSheet(f"background:{CARD}; color:{TXT}; border:none;")
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            folder_path = dlg.selectedFiles()[0] if dlg.selectedFiles() else ""
+            if folder_path:
+                self.save_directory = folder_path
+                self.folder_display.setText(folder_path)
 
     def validate_entries(self):
         self.compile_all_entries()

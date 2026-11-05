@@ -5,13 +5,16 @@ colour) and converts them to QIcon for use on buttons / fields. Results are
 cached because each load rasterises the SVG.
 """
 import os
+import re
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")  # silence pygame import banner
 
 from pytablericons import TablerIcons, OutlineIcon, FilledIcon  # noqa: E402  (re-exported)
+import pytablericons as _pytb_pkg
 from PIL import Image
 from PIL.ImageQt import ImageQt
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PyQt6.QtCore import Qt
+from PyQt6.QtSvg import QSvgRenderer
 
 # Default icon colours (mirror the UI palette)
 ICON_LIGHT = "#e8edf5"
@@ -22,6 +25,28 @@ ICON_WHITE = "#ffffff"
 _pixmap_cache = {}
 _icon_cache = {}
 _glyph_cache = {}
+
+_TABLER_DIR = os.path.dirname(os.path.abspath(_pytb_pkg.__file__))
+
+
+def _svg_glyph_pixmap(icon, target_px, color, stroke_width):
+    """Render a Tabler SVG directly via QSvgRenderer — crisp at any size."""
+    if isinstance(icon, OutlineIcon):
+        svg_path = os.path.join(_TABLER_DIR, 'icons', 'outline', icon.value)
+    else:
+        svg_path = os.path.join(_TABLER_DIR, 'icons', 'filled', icon.value)
+    with open(svg_path) as f:
+        svg = f.read()
+    svg = svg.replace('currentColor', color)
+    svg = re.sub(r'stroke-width="[^"]*"', f'stroke-width="{stroke_width}"', svg)
+    renderer = QSvgRenderer(svg.encode())
+    pm = QPixmap(target_px, target_px)
+    pm.fill(QColor(0, 0, 0, 0))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(p)
+    p.end()
+    return pm
 
 
 def _trimmed_glyph_pixmap(icon, target_px, color, stroke_width):
@@ -37,6 +62,14 @@ def _trimmed_glyph_pixmap(icon, target_px, color, stroke_width):
     # canvas well) and only rescale the trimmed ink.
     img = TablerIcons.load(icon, size=target_px, color=color, stroke_width=stroke_width)
     bbox = img.getbbox()
+    # Some icons (e.g. MICROPHONE) clip against the image boundary at certain
+    # sizes. Fall back to QSvgRenderer which renders the SVG directly at any
+    # size without clipping.
+    w_img, h_img = img.size
+    if bbox is None or bbox[2] >= w_img or bbox[3] >= h_img:
+        pm = _svg_glyph_pixmap(icon, target_px, color, stroke_width)
+        _glyph_cache[key] = pm
+        return pm
     if bbox:
         img = img.crop(bbox)
     w, h = img.size

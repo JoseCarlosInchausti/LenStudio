@@ -201,3 +201,31 @@ The DESI `viewer-desi` endpoint requires credentials and is access-controlled. *
 ## Distribution (Deferred)
 
 Plan is to ship via PyPI (`pip install lenstudio` / `pipx install lenstudio`). Packaging steps are deferred until feature work is complete.
+
+---
+
+## Pre-Public Checklist
+
+Before making the repository public, complete the following:
+
+**🔴 Blockers**
+- [ ] Remove hardcoded DESI credential from `tests.py` line 78 (`auth=('desi', '[REDACTED]')`) **and rewrite git history** — the credential appears in two commits (`Initial commit`, `VoiceOver mode added`). Use BFG Repo Cleaner or `git filter-branch`. Simply deleting the line is not enough.
+
+**🟡 Gitignore additions**
+- [ ] Add `recent_files.json` — contains local filesystem paths
+- [ ] Add `settings-state.txt` — user-specific runtime state
+- [ ] Add `.claude/` — Claude Code project config
+
+**🟠 Cleanup**
+- [ ] Decide whether to include `Test catalogs/` as sample data (files contain personal inspection grades in `JI_grades`/`JI_comments` columns) or gitignore it
+- [ ] Remove or gitignore `Main_temp.py` and `StudioScreen v1.py` (dead files)
+- [ ] Review Jupyter notebooks (`notebook_tests.ipynb`, `GIF.ipynb`, `_VI_interface-true-grz_fits-zd+zs_hsc (1) (5).ipynb`) for internal data before publishing
+- [ ] Review `VoiceOverTests/`
+
+**✅ Dependencies — all clear**
+
+PyQt6 (LGPL), pyqtgraph (MIT), numpy (BSD), astropy (BSD), Pillow (HPND), requests (Apache 2.0), pytablericons (MIT), pandas (BSD). No licensing conflicts.
+
+**📣 Citation**
+- [ ] Add `CITATION.cff` with author name, year, and software title
+- [ ] Register repo on Zenodo for a citable DOI per release

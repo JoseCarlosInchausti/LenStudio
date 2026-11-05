@@ -186,7 +186,9 @@ class LoadDataWidget(QWidget):
             centre.addSpacing(6)
             for entry in recent[:3]:
                 if os.path.exists(entry['path']):
-                    centre.addWidget(_RecentRow(entry, self._open_path))
+                    rr = _RecentRow(entry, self._open_path)
+                    rr.setFixedWidth(460)
+                    centre.addWidget(rr)
 
         outer = QVBoxLayout(self)
         outer.addStretch()
@@ -349,15 +351,14 @@ class LoadDataWidget(QWidget):
     # ── File loading ───────────────────────────────────────────────────────
 
     def open_file_browser(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select a CSV file", "", "CSV files (*.csv);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Open CSV catalog", "", "CSV files (*.csv)")
         if path:
             self._open_path(path)
 
     def _open_path(self, path: str):
         if not path.lower().endswith('.csv'):
-            show_popup_window(title='Error', text='Please select a .CSV file',
-                              header_icon_path=None)
+            show_popup_window(title='Wrong file type', text='Please select a .CSV file.',
+                              parent=self)
             return
         self._anim_timer.stop()
         self.main_window.csv_path = path

@@ -68,12 +68,9 @@ class Inspection:
             )
 
         if self.is_cached(self.current_idx):
-            print(f'{self.current_idx} pulled from cache')
             rgb_success, rgb_cutout, grz_success, grz_cutout = self.pull_from_cache(idx=self.current_idx)
 
         else:
-            print(f'{self.current_idx} pulled web')
-
             rgb_success, rgb_cutout = self.get_rgb_cutout(ra=ra, dec=dec, cutout_size=self.cutout_size, _simulation = self.simulation_mode)
             grz_success, grz_cutout = self.get_grz_cutout(ra=ra, dec=dec, cutout_size=self.cutout_size, _simulation = self.simulation_mode)
 
@@ -135,7 +132,7 @@ class Inspection:
         url = 'https://www.legacysurvey.org/viewer/cutout.jpg?ra={}&dec={}&layer={}&pixscale={}&size={}&zoom=16'.format(ra, dec, self.layer, 0.262, int(cutout_size))
         if not _simulation:
             try:
-                response = requests.get(url)
+                response = requests.get(url, timeout=15)
                 if response.status_code == 200:
                     image_buffer = BytesIO(response.content)
                     image = Image.open(image_buffer)
@@ -161,7 +158,6 @@ class Inspection:
         self.cached_images['{}rgb'.format(idx)]=np.copy(list_of_new_images[0])
         self.cached_images['{}grz'.format(idx)]=np.copy(list_of_new_images[1])
         self.cached_images_idxs.append(idx)
-        print(f'{idx} added to cache')
 
     def pull_from_cache(self,idx):
         rgb_cutout = self.cached_images['{}rgb'.format(idx)]
@@ -187,5 +183,5 @@ class PrefetchThread(QThread):
             grz_ok, grz = self.inspection.get_grz_cutout(ra, dec, self.inspection.cutout_size)
             if rgb_ok and grz_ok:
                 self.fetched.emit(rgb, grz, self.idx, self.layer_snapshot)
-        except Exception as e:
-            print(f'[Prefetch] idx={self.idx} failed: {e}')
+        except Exception:
+            pass

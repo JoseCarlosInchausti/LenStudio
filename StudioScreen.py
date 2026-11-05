@@ -420,6 +420,9 @@ class StudioScreenWidget(QWidget):
         self.quick_inspection_checkbox.checkbox.setStyleSheet(CHECKBOX_QSS)
         self.voiceover_checkbox = CheckBox("VoiceOver Mode",self.main_window)
         self.voiceover_checkbox.checkbox.setStyleSheet(CHECKBOX_QSS)
+        self.voiceover_checkbox.checkbox.setToolTip(
+            'Voice commands: "Grade A" · "Comment [text]" · "Next" · "Previous"'
+        )
         # self.lock_inspection_toggle = StyledToggleSwitch("Lock Grades & Comments")
 
         # Labels:
@@ -507,7 +510,39 @@ class StudioScreenWidget(QWidget):
         self.top_panel.add_widget(self.screen_switch_tab_bar,stretch=(False,False))
         # Place voiceover status right after autosave widget (index 1 in horizontal layout)
         self.top_panel.layout.insertWidget(1, self.voiceover_status_widget)
+
+        # New Inspection button — far left of the top bar
+        _new_insp_btn = QPushButton(' New Inspection')
+        _new_insp_btn.setIcon(tabler_icon(OutlineIcon.HOME, size=14, color='white'))
+        _new_insp_btn.setIconSize(QSize(14, 14))
+        _new_insp_btn.setFixedHeight(30)
+        _new_insp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _new_insp_btn.setStyleSheet(f"""
+            QPushButton {{ background-color:{Theme.ACCENT}; color:white; border:none;
+                           border-radius:8px; font-size:13px; font-weight:700; padding:0 12px; }}
+            QPushButton:hover {{ background-color:{Theme.ACCENT_HI}; }}
+            QPushButton:pressed {{ background-color:{Theme.ACCENT_LO}; }}
+        """)
+        _new_insp_btn.clicked.connect(self._new_inspection)
+        _sep = QFrame()
+        _sep.setFrameShape(QFrame.Shape.VLine)
+        _sep.setFixedSize(1, 22)
+        _sep.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
+        self.top_panel.layout.insertWidget(0, _new_insp_btn)
+        self.top_panel.layout.insertWidget(1, _sep)
         
+    def _new_inspection(self):
+        from Assets import show_branded_dialog
+        confirmed = show_branded_dialog(
+            self, 'New Inspection',
+            'Your grades have been autosaved.\nReturn to the welcome screen?',
+            icon=OutlineIcon.HOME, icon_bg=Theme.ACCENT,
+            confirm=True, yes_label='New Inspection', no_label='Cancel',
+        )
+        if confirmed:
+            self._stop_all_prefetches()
+            self.main_window.switch_screens(0)
+
     def _switch_screens(self,to_screen='settings'):
         if self.animating:
             return
@@ -752,6 +787,13 @@ class StudioScreenWidget(QWidget):
         _default_survey = str(self.Settings.get_setting('default_survey') or 'DR10')
         self.current_inspection.set_survey(_default_survey.lower())
 
+        # Generate chevron-down PNG once for QSS ::down-arrow (used by both combo boxes)
+        self._arrow_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '_combo_arrow.png'
+        ).replace('\\', '/')
+        if not os.path.exists(self._arrow_path):
+            tabler_pixmap(OutlineIcon.CHEVRON_DOWN, size=12, color=Theme.TXT_MUTE).save(self._arrow_path)
+
         #Images:
         success_dict, data_dict = self.current_inspection.get_current_images(idx=0)
 
@@ -779,7 +821,7 @@ class StudioScreenWidget(QWidget):
         grid_layout.setColumnStretch(0, 0)  # sliders — fixed width
         grid_layout.setColumnStretch(1, 1)  # GRZ frames
         grid_layout.setColumnStretch(2, 3)  # RGB frame
-        small_cutout_panel_size = 120
+        small_cutout_panel_size = max(120, min(int(self.main_window.height() * 0.17), 240))
         frame_size = small_cutout_panel_size + 14  # image + frame margins
         self.blank_overlays = {}
         self.contrast_sliders = {}
@@ -823,6 +865,7 @@ class StudioScreenWidget(QWidget):
         grid_layout.addWidget(self._frame_image(rgb_image, 'RGB'), 0, 2, 3, 1, alignment=Qt.AlignmentFlag.AlignCenter)
         self.images_on_layout['rgb'] = rgb_image
         self.blank_overlays['rgb'] = self._make_blank_overlay(rgb_image)
+        self._add_scalebar_compass(rgb_image)
         self._update_blank_overlays(success_dict, data_dict)
         self.imaging_data_panel.layout.addStretch()
         self.imaging_data_panel.add_layout(grid_layout)
@@ -857,7 +900,18 @@ class StudioScreenWidget(QWidget):
                 font-size: 13px; font-weight: 600; padding: 0 10px;
             }}
             QComboBox:hover {{ background-color: #243a5a; }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox::drop-down {{
+                subcontrol-origin: border;
+                subcontrol-position: center right;
+                width: 26px;
+                border-left: 1px solid #33425c;
+                border-top-right-radius: 7px;
+                border-bottom-right-radius: 7px;
+            }}
+            QComboBox::down-arrow {{
+                image: url("{self._arrow_path}");
+                width: 12px; height: 12px;
+            }}
             QComboBox QAbstractItemView {{
                 background-color: #1c2a42; color: {Theme.TXT};
                 selection-background-color: {Theme.ACCENT};
@@ -916,8 +970,8 @@ class StudioScreenWidget(QWidget):
         metadata=self.current_inspection.get_current_metadata()
         # {'ra':ra,'dec':dec,'survey':survey,'user selected data':user_selected_data}
         self.metadata_panel.layout.setSpacing(4)
-        self.ra_box=MetadataField('R.A.', str(metadata['ra']), mono=True)
-        self.dec_box=MetadataField('DEC.', str(metadata['dec']), mono=True)
+        self.ra_box=MetadataField('R.A. [deg]', str(metadata['ra']), mono=True)
+        self.dec_box=MetadataField('Dec. [deg]', str(metadata['dec']), mono=True)
         self.survey_box=MetadataField('SURVEY', metadata['survey'])
         self.metadata_panel.add_widget(self.ra_box, stretch=(False,False))
         self.metadata_panel.add_widget(self.dec_box, stretch=(False,False))
@@ -1024,7 +1078,7 @@ class StudioScreenWidget(QWidget):
                 'System Already Graded',
                 f'System #{target_idx + 1} already has grade "{existing}". Navigate to it?',
                 confirm=True)
-            return reply == QMessageBox.StandardButton.Yes
+            return reply
         return True
 
     def activate_deactivate_quick_inspection(self,state):
@@ -1044,26 +1098,15 @@ class StudioScreenWidget(QWidget):
             field.show_lock(locked)
     
     def _warn(self, title, text, confirm=False):
-        msg = QMessageBox(self)
-        msg.setWindowTitle(title)
-        msg.setText(text)
-        msg.setStyleSheet("""
-            QMessageBox { background-color: black; }
-            QLabel { color: white; font-size: 14px; }
-            QPushButton {
-                background-color: white;
-                color: #152238;
-                border-radius: 6px;
-                padding: 4px 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover { background-color: #f0ffff; }
-        """)
-        if confirm:
-            msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        else:
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-        return msg.exec()
+        from Assets import show_branded_dialog
+        from Icons import OutlineIcon
+        return show_branded_dialog(
+            self, title, text,
+            icon=OutlineIcon.ALERT_TRIANGLE,
+            icon_bg='#f59e0b',
+            confirm=confirm,
+            yes_label='Continue', no_label='Cancel',
+        )
 
     def _rebuild_focus_order(self):
         field_map = {'Grade': self.grade_input, 'Comment': self.comment_input}
@@ -1161,20 +1204,14 @@ class StudioScreenWidget(QWidget):
         layout.setSpacing(0)
 
         # ── Icon badge ───────────────────────────────────────────────
-        badge = QWidget()
-        badge.setFixedSize(56, 56)
-        badge.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        badge.setStyleSheet(f"background-color:{Theme.ACCENT}; border-radius:28px;")
-        badge_layout = QVBoxLayout(badge)
-        badge_layout.setContentsMargins(0, 0, 0, 0)
-        mic_lbl = QLabel()
-        mic_lbl.setPixmap(tabler_pixmap(OutlineIcon.MICROPHONE, size=26, color=ICON_WHITE))
-        mic_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mic_lbl.setStyleSheet("background: transparent;")
-        badge_layout.addWidget(mic_lbl)
+        badge_lbl = QLabel()
+        badge_lbl.setPixmap(badge_pixmap(OutlineIcon.MICROPHONE, diameter=56, icon_size=26,
+                                         icon_color=ICON_WHITE, bg_color=Theme.ACCENT))
+        badge_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge_lbl.setStyleSheet("background: transparent;")
         badge_wrapper = QHBoxLayout()
         badge_wrapper.addStretch()
-        badge_wrapper.addWidget(badge)
+        badge_wrapper.addWidget(badge_lbl)
         badge_wrapper.addStretch()
         layout.addLayout(badge_wrapper)
         layout.addSpacing(14)
@@ -1244,8 +1281,112 @@ class StudioScreenWidget(QWidget):
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._voiceover_consent_given = True
+            self._show_voiceover_tutorial()
             return True
         return False
+
+    def _show_voiceover_tutorial(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('VoiceOver')
+        dlg.setModal(True)
+        dlg.setFixedWidth(420)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        dlg.setStyleSheet(f"""
+            QDialog {{
+                background-color: {Theme.SURFACE};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 14px;
+            }}
+            QLabel {{ background: transparent; }}
+        """)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(28, 28, 28, 22)
+        layout.setSpacing(0)
+
+        # Header
+        title_lbl = QLabel("You're all set!")
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_lbl.setStyleSheet(
+            f"color:{Theme.TXT}; font-size:17px; font-weight:700;")
+        layout.addWidget(title_lbl)
+        layout.addSpacing(6)
+
+        sub_lbl = QLabel("Speak any of these commands while VoiceOver is active:")
+        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub_lbl.setWordWrap(True)
+        sub_lbl.setStyleSheet(f"color:{Theme.TXT_MUTE}; font-size:13px;")
+        layout.addWidget(sub_lbl)
+        layout.addSpacing(22)
+
+        # Command rows
+        _commands = [
+            (OutlineIcon.STAR,         Theme.ACCENT,  'Grade A, B, C …',
+             'Sets the grade for the current system'),
+            (OutlineIcon.WRITING,      '#a855f7',     'Comment [your text]',
+             'Adds or replaces the comment field'),
+            (OutlineIcon.ARROW_RIGHT,  '#22c55e',     'Next',
+             'Advances to the next system'),
+            (OutlineIcon.ARROW_LEFT,   '#f59e0b',     'Previous',
+             'Goes back to the previous system'),
+        ]
+
+        for icon, color, cmd, desc in _commands:
+            row_w = QWidget()
+            row_w.setStyleSheet(
+                f"background:{Theme.CARD}; border-radius:10px;")
+            row_w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            row_h = QHBoxLayout(row_w)
+            row_h.setContentsMargins(14, 12, 14, 12)
+            row_h.setSpacing(14)
+
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(
+                badge_pixmap(icon, diameter=34, icon_size=17,
+                             icon_color=ICON_WHITE, bg_color=color))
+            icon_lbl.setFixedSize(34, 34)
+            row_h.addWidget(icon_lbl)
+
+            text_col = QVBoxLayout()
+            text_col.setSpacing(2)
+            cmd_lbl = QLabel(f'"{cmd}"')
+            cmd_lbl.setStyleSheet(
+                f"color:{Theme.TXT}; font-size:13px; font-weight:700;")
+            desc_lbl = QLabel(desc)
+            desc_lbl.setStyleSheet(
+                f"color:{Theme.TXT_MUTE}; font-size:12px;")
+            text_col.addWidget(cmd_lbl)
+            text_col.addWidget(desc_lbl)
+            row_h.addLayout(text_col)
+            row_h.addStretch()
+
+            layout.addWidget(row_w)
+            layout.addSpacing(8)
+
+        layout.addSpacing(14)
+
+        # Divider
+        div = QFrame()
+        div.setFixedHeight(1)
+        div.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
+        layout.addWidget(div)
+        layout.addSpacing(16)
+
+        # Got it button
+        got_it = QPushButton("Got it")
+        got_it.setFixedHeight(38)
+        got_it.setStyleSheet(f"""
+            QPushButton {{
+                background:{Theme.ACCENT}; color:white; border:none;
+                border-radius:8px; font-size:14px; font-weight:700;
+            }}
+            QPushButton:hover {{ background:{Theme.ACCENT_HI}; }}
+            QPushButton:pressed {{ background:{Theme.ACCENT_LO}; }}
+        """)
+        got_it.clicked.connect(dlg.accept)
+        layout.addWidget(got_it)
+
+        dlg.exec()
 
     def _vo_idle_timeout(self):
         self.voiceover_checkbox.checkbox.blockSignals(True)
@@ -1293,7 +1434,7 @@ class StudioScreenWidget(QWidget):
         if self.Settings.get_setting('require_grade') and not grade:
             reply = self._warn('Missing Grade',
                 'No grade has been entered for this system. Continue anyway?', confirm=True)
-            if reply == QMessageBox.StandardButton.No:
+            if not reply:
                 return False
 
         if self.Settings.get_setting('only_pre_defined_grades') and grade:
@@ -1306,7 +1447,7 @@ class StudioScreenWidget(QWidget):
         if self.Settings.get_setting('require_comment') and not comment:
             reply = self._warn('Missing Comment',
                 'No comment has been entered for this system. Continue anyway?', confirm=True)
-            if reply == QMessageBox.StandardButton.No:
+            if not reply:
                 return False
 
         return True
@@ -1451,6 +1592,58 @@ class StudioScreenWidget(QWidget):
         self._er_points.append((x, y))
         self._er_draw_overlay()
 
+    def _add_scalebar_compass(self, rgb_widget):
+        import pyqtgraph as pg
+        vb  = rgb_widget.plot
+        pix = self.current_inspection.pixscale   # 0.262 arcsec/px
+        img_w = rgb_widget.img_w                 # 101
+        img_h = rgb_widget.img_h                 # 101
+
+        pen = pg.mkPen(color=(255, 255, 255, 200), width=1.5)
+        font = QFont()
+        font.setPointSize(9)
+
+        # ── Scale bar (bottom-left, 5 arcsec) ────────────────────────
+        bar_arcsec = 5.0
+        bar_px = bar_arcsec / pix   # ≈ 19.1 px
+        pad = 5
+        x0, y0 = float(pad), float(pad)
+        x1 = x0 + bar_px
+        tick_h = 3.0
+
+        bar_line = pg.PlotDataItem([x0, x1],   [y0, y0],              pen=pen)
+        tick_l   = pg.PlotDataItem([x0, x0],   [y0, y0 + tick_h],     pen=pen)
+        tick_r   = pg.PlotDataItem([x1, x1],   [y0, y0 + tick_h],     pen=pen)
+        bar_lbl  = pg.TextItem('5ʺ', color=(255, 255, 255), anchor=(0.5, 1.0))
+        bar_lbl.setFont(font)
+        bar_lbl.setPos((x0 + x1) / 2, y0 + tick_h + 1)
+
+        for item in (bar_line, tick_l, tick_r, bar_lbl):
+            vb.addItem(item)
+
+        # ── Compass (bottom-right) ────────────────────────────────────
+        # ViewBox orientation: +x → −RA (West), +y → +Dec (North)
+        # Therefore: North = +y, East = −x
+        arm = 7.0
+        cx  = float(img_w) - 12.0
+        cy  = 10.0
+
+        n_line = pg.PlotDataItem([cx, cx],       [cy, cy + arm],             pen=pen)
+        n_head = pg.PlotDataItem([cx-2, cx, cx+2], [cy+arm-3, cy+arm, cy+arm-3], pen=pen)
+        e_line = pg.PlotDataItem([cx, cx - arm], [cy, cy],                   pen=pen)
+        e_head = pg.PlotDataItem([cx-arm+3, cx-arm, cx-arm+3], [cy-2, cy, cy+2], pen=pen)
+
+        n_lbl = pg.TextItem('N', color=(255, 255, 255), anchor=(0.5, 1.0))
+        n_lbl.setFont(font)
+        n_lbl.setPos(cx, cy + arm + 1)
+
+        e_lbl = pg.TextItem('E', color=(255, 255, 255), anchor=(1.0, 0.5))
+        e_lbl.setFont(font)
+        e_lbl.setPos(cx - arm - 1, cy)
+
+        for item in (n_line, n_head, e_line, e_head, n_lbl, e_lbl):
+            vb.addItem(item)
+
     def _er_draw_overlay(self):
         import pyqtgraph as pg
         self._er_clear_overlay()
@@ -1549,7 +1742,6 @@ class StudioScreenWidget(QWidget):
 
     def _toggle_mc_mode(self):
         self._mc_mode = not self._mc_mode
-        print(f"[MC] _toggle_mc_mode → _mc_mode={self._mc_mode}")
         if self._mc_mode:
             self._mc_button.setStyleSheet(MC_ACTIVE_BTN)
             self._mc_button.setIcon(tabler_icon(OutlineIcon.CROSSHAIR, size=15, color='#f59e0b'))
@@ -1559,7 +1751,6 @@ class StudioScreenWidget(QWidget):
         self._mc_button.setIconSize(QSize(15, 15))
 
     def _on_mc_rgb_click(self, event):
-        print(f"[MC] click handler fired, _mc_mode={self._mc_mode}, button={event.button()}")
         if not self._mc_mode:
             return
         if event.button() != Qt.MouseButton.LeftButton:
@@ -1567,11 +1758,9 @@ class StudioScreenWidget(QWidget):
         rgb_widget = self.images_on_layout['rgb']
         vb = rgb_widget.plot
         in_bounds = vb.sceneBoundingRect().contains(event.scenePos())
-        print(f"[MC] in_bounds={in_bounds}, scenePos={event.scenePos()}, vbRect={vb.sceneBoundingRect()}")
         if not in_bounds:
             return
         pos = vb.mapSceneToView(event.scenePos())
-        print(f"[MC] viewPos=({pos.x():.1f}, {pos.y():.1f}), img_w={rgb_widget.img_w}, img_h={rgb_widget.img_h}")
         self._mc_point = (pos.x(), pos.y())
 
         # Image center in ViewBox coords; +x → −RA, +y → +Dec (after rot90 CW)
@@ -1609,7 +1798,6 @@ class StudioScreenWidget(QWidget):
 
     def _mc_draw_overlay(self):
         import pyqtgraph as pg
-        print(f"[MC] _mc_draw_overlay called, _mc_point={self._mc_point}")
         self._mc_clear_overlay()
         if self._mc_point is None:
             return
@@ -1625,11 +1813,9 @@ class StudioScreenWidget(QWidget):
             brush=pg.mkBrush(color), symbol='o'
         )
         vb = self.images_on_layout['rgb'].plot
-        print(f"[MC] adding items at ({x:.1f}, {y:.1f}), arm={arm}, vb={vb}")
         for item in (h_line, v_line, dot):
             vb.addItem(item)
             self._mc_overlay_items.append(item)
-        print(f"[MC] overlay_items count={len(self._mc_overlay_items)}")
 
         self._mc_overlay_visible = True
 
@@ -1846,6 +2032,7 @@ class StudioScreenWidget(QWidget):
         self._review_queue = []
         self._review_chips = {}
         self._review_chip_grades = []
+        self._review_gen = 0
 
         self._refresh_summary()
 
@@ -2028,6 +2215,7 @@ class StudioScreenWidget(QWidget):
         self._refresh_review_grid()
 
     def _refresh_review_grid(self):
+        self._review_gen += 1
         for t in list(self._review_threads.values()):
             if t.isRunning():
                 t.quit()
@@ -2078,6 +2266,7 @@ class StudioScreenWidget(QWidget):
         self._start_pending_review_fetches()
 
     def _start_pending_review_fetches(self):
+        gen = self._review_gen
         active = sum(1 for t in self._review_threads.values() if t.isRunning())
         while active < 4 and self._review_queue:
             idx, _ = self._review_queue.pop(0)
@@ -2091,7 +2280,7 @@ class StudioScreenWidget(QWidget):
                 continue
             t = ReviewFetchThread(self.current_inspection, idx, ra, dec, cutout_size=80)
             t.thumbnail_ready.connect(self._on_review_thumbnail_ready)
-            t.finished.connect(lambda i=idx: self._on_review_fetch_done(i))
+            t.finished.connect(lambda i=idx, g=gen: self._on_review_fetch_done(i, g))
             self._review_threads[idx] = t
             t.start()
             active += 1
@@ -2100,7 +2289,9 @@ class StudioScreenWidget(QWidget):
         if idx in self._review_cards:
             self._review_cards[idx].set_image(arr)
 
-    def _on_review_fetch_done(self, idx):
+    def _on_review_fetch_done(self, idx, gen):
+        if gen != self._review_gen:
+            return
         self._review_threads.pop(idx, None)
         self._start_pending_review_fetches()
 
@@ -2196,13 +2387,6 @@ class StudioScreenWidget(QWidget):
         self.tools_panel.layout.setContentsMargins(12, 8, 12, 12)
         self.tools_panel.layout.setSpacing(8)
 
-        # Generate a chevron-down PNG once for the QSS ::down-arrow
-        _arrow_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), '_combo_arrow.png'
-        ).replace('\\', '/')
-        if not os.path.exists(_arrow_path):
-            tabler_pixmap(OutlineIcon.CHEVRON_DOWN, size=12, color=Theme.TXT_MUTE).save(_arrow_path)
-
         _combo_qss = f"""
             QComboBox {{
                 background-color: #1c2a42; color: {Theme.TXT};
@@ -2219,7 +2403,7 @@ class StudioScreenWidget(QWidget):
                 border-bottom-right-radius: 7px;
             }}
             QComboBox::down-arrow {{
-                image: url("{_arrow_path}");
+                image: url("{self._arrow_path}");
                 width: 12px; height: 12px;
             }}
             QComboBox QAbstractItemView {{
@@ -2351,11 +2535,9 @@ class StudioScreenWidget(QWidget):
         thread.finished.connect(lambda i=idx: self._prefetch_threads.pop(i, None))
         self._prefetch_threads[idx] = thread
         thread.start()
-        print(f'[Prefetch] started idx={idx}')
 
     def _on_prefetch_done(self, rgb, grz, idx, layer):
         if layer != self.current_inspection.layer:
-            print(f'[Prefetch] discarding idx={idx} (stale layer)')
             return
         if not self.current_inspection.is_cached(idx):
             self.current_inspection.add_to_cache([rgb, grz], idx)

@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy,QDialog
 from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen,QIntValidator
-from Icons import tabler_pixmap, tabler_icon, OutlineIcon
+from Icons import tabler_pixmap, tabler_icon, badge_pixmap, OutlineIcon, ICON_WHITE
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QSize, Qt, QRectF, QRect, QEvent, pyqtSignal, QTimer
@@ -121,7 +121,6 @@ class SystemJumpWidget(QWidget):
         self._label.setStyleSheet(self._LABEL_SS)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self._label.installEventFilter(self)
         self._stack.addWidget(self._label)
 
         # Page 1 — inline edit ("System [__] of N")
@@ -139,7 +138,6 @@ class SystemJumpWidget(QWidget):
         self._input.setFixedWidth(52)
         self._input.setStyleSheet(self._INPUT_SS)
         self._input.returnPressed.connect(self._confirm)
-        self._input.installEventFilter(self)
         self._suf  = QLabel()
         self._suf.setStyleSheet(self._SOFT_SS)
 
@@ -149,6 +147,10 @@ class SystemJumpWidget(QWidget):
         edit_row.addWidget(self._suf)
         edit_row.addStretch()
         self._stack.addWidget(edit_page)
+
+        # Install filters after both widgets exist so eventFilter never sees a partial state
+        self._label.installEventFilter(self)
+        self._input.installEventFilter(self)
 
     def set_system(self, current_1based, total):
         self._current = current_1based
@@ -360,12 +362,121 @@ class SvgWidget(QSvgWidget):
         self.renderer().setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         super().resizeEvent(event)
 
-def show_popup_window(title,text,header_icon_path):
-    msg = QMessageBox()
-    msg.setWindowTitle(title)
-    # msg.setWindowIcon(QIcon(header_icon_path)) #Removes the default icon
-    msg.setText(text)
-    msg.exec()
+def show_branded_dialog(parent, title, text,
+                        icon=None, icon_bg=None,
+                        confirm=False,
+                        ok_label='OK', yes_label='Yes', no_label='Cancel'):
+    """On-brand themed modal dialog.
+
+    Returns True when the user clicks the affirmative button (OK / Yes),
+    False when they dismiss or click Cancel.  Pass confirm=True for a
+    two-button Yes/Cancel flow; otherwise a single OK button is shown.
+    """
+    if icon is None:
+        icon = OutlineIcon.INFO_CIRCLE
+    if icon_bg is None:
+        icon_bg = Theme.ACCENT
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setModal(True)
+    dlg.setFixedWidth(400)
+    dlg.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    dlg.setStyleSheet(f"""
+        QDialog {{
+            background-color: {Theme.SURFACE};
+            border: 1px solid {Theme.BORDER};
+            border-radius: 14px;
+        }}
+        QLabel {{ background: transparent; }}
+    """)
+
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(28, 28, 28, 22)
+    layout.setSpacing(0)
+
+    # Icon badge
+    badge_lbl = QLabel()
+    badge_lbl.setPixmap(badge_pixmap(icon, diameter=44, icon_size=22,
+                                     icon_color=ICON_WHITE, bg_color=icon_bg))
+    badge_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    badge_row = QHBoxLayout()
+    badge_row.addStretch()
+    badge_row.addWidget(badge_lbl)
+    badge_row.addStretch()
+    layout.addLayout(badge_row)
+    layout.addSpacing(14)
+
+    # Title
+    title_lbl = QLabel(title)
+    title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title_lbl.setWordWrap(True)
+    title_lbl.setStyleSheet(
+        f"color:{Theme.TXT}; font-size:16px; font-weight:700;")
+    layout.addWidget(title_lbl)
+    layout.addSpacing(8)
+
+    # Body text
+    body_lbl = QLabel(text)
+    body_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    body_lbl.setWordWrap(True)
+    body_lbl.setStyleSheet(
+        f"color:{Theme.TXT_SOFT}; font-size:13px; line-height:1.4;")
+    layout.addWidget(body_lbl)
+    layout.addSpacing(22)
+
+    # Divider
+    div = QFrame()
+    div.setFixedHeight(1)
+    div.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
+    layout.addWidget(div)
+    layout.addSpacing(16)
+
+    _SEC = f"""
+        QPushButton {{
+            background:transparent; color:{Theme.TXT_SOFT};
+            border:1px solid {Theme.BORDER}; border-radius:8px;
+            font-size:14px; font-weight:600; padding:0;
+        }}
+        QPushButton:hover {{ border-color:{Theme.FIELD_BRD}; color:{Theme.TXT}; }}
+    """
+    _PRI = f"""
+        QPushButton {{
+            background:{Theme.ACCENT}; color:white; border:none;
+            border-radius:8px; font-size:14px; font-weight:700; padding:0;
+        }}
+        QPushButton:hover {{ background:{Theme.ACCENT_HI}; }}
+        QPushButton:pressed {{ background:{Theme.ACCENT_LO}; }}
+    """
+
+    btn_row = QHBoxLayout()
+    btn_row.setSpacing(10)
+    if confirm:
+        no_btn = QPushButton(no_label)
+        no_btn.setFixedHeight(36)
+        no_btn.setStyleSheet(_SEC)
+        no_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(no_btn)
+        yes_btn = QPushButton(yes_label)
+        yes_btn.setFixedHeight(36)
+        yes_btn.setStyleSheet(_PRI)
+        yes_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(yes_btn)
+    else:
+        ok_btn = QPushButton(ok_label)
+        ok_btn.setFixedHeight(36)
+        ok_btn.setStyleSheet(_PRI)
+        ok_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(ok_btn)
+
+    layout.addLayout(btn_row)
+    return dlg.exec() == QDialog.DialogCode.Accepted
+
+
+# Backward-compatible shim used in LoadDataScreen
+def show_popup_window(title, text, header_icon_path=None, parent=None):
+    show_branded_dialog(parent, title, text,
+                        icon=OutlineIcon.CIRCLE_X, icon_bg='#ef4444')
 
 class ImageWidget(pg.GraphicsLayoutWidget):
     def __init__(self,image_arr,panel_size=(200,200)):
@@ -1050,8 +1161,6 @@ class InspectionSettings:
 
         with open(self.config_file_path,'w') as old_config_file:
             json.dump(self.config_file_json, old_config_file, indent=4)
-
-        print(self.name_to_widget_map)
 
     def _populate_layout(self,menu_name,host_layout):
         #Determine if a frame is needed:
