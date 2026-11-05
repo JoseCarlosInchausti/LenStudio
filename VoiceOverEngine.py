@@ -2,13 +2,12 @@ import re
 import time
 import collections
 import numpy as np
-import pyaudio
+import sounddevice as sd
 import webrtcvad
 from PyQt6.QtCore import QThread, pyqtSignal
 
 _RATE           = 16000
 _CHANNELS       = 1
-_FORMAT         = pyaudio.paInt16
 _FRAME_MS       = 30                              # VAD requires 10/20/30 ms frames
 _FRAME_SAMPLES  = int(_RATE * _FRAME_MS / 1000)  # 480 samples per frame
 _SILENCE_MS     = 800                             # stop after 0.8 s of silence post-speech
@@ -113,12 +112,11 @@ class VoiceOverThread(QThread):
         while self._active:
             # ── Open mic ────────────────────────────────────────────
             try:
-                p = pyaudio.PyAudio()
-                stream = p.open(
-                    format=_FORMAT, channels=_CHANNELS,
-                    rate=_RATE, input=True,
-                    frames_per_buffer=_FRAME_SAMPLES,
+                stream = sd.RawInputStream(
+                    samplerate=_RATE, channels=_CHANNELS,
+                    dtype='int16', blocksize=_FRAME_SAMPLES,
                 )
+                stream.start()
             except Exception as e:
                 msg = f'Mic error: {e}'
                 print(f'[VoiceOver] {msg}')
@@ -136,7 +134,8 @@ class VoiceOverThread(QThread):
 
             try:
                 while self._active and (len(speech) + len(preroll)) < max_frames:
-                    data = stream.read(_FRAME_SAMPLES, exception_on_overflow=False)
+                    raw, _ = stream.read(_FRAME_SAMPLES)
+                    data = bytes(raw)
                     is_speech = vad.is_speech(data, _RATE)
 
                     if not speaking:
@@ -154,9 +153,8 @@ class VoiceOverThread(QThread):
                             if silent >= _SILENCE_FRAMES:
                                 break
             finally:
-                stream.stop_stream()
+                stream.stop()
                 stream.close()
-                p.terminate()
 
             if not self._active:
                 break
