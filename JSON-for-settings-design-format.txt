@@ -1,0 +1,132 @@
+{
+    "tabs": {
+            "Grades and Comments":{
+                "Grades":[
+                    {
+                        "type":"checkmark",
+                        "label":"Always capitalize grades",
+                        "caption":"LenStudio will automatically capitalize grades",
+                        "name":"caplock_grades"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Show warning for missing grades",
+                        "caption":"A warning will be shown when changing system without entering a grade",
+                        "name":"require_grade"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Only allow pre-defined grades",
+                        "name":"only_pre_defined_grades",
+                        "caption":"Only grades declared below will be allowed during inspection (Note: grades are case-sensitive)"
+                    },
+                    {
+                        "type":"editable list",
+                        "label":"Create list of allowed grades:",
+                        "caption":"Enter new grade",
+                        "name":"list_of_allowed_grades",
+                        "activate if checked":"only_pre_defined_grades"
+                    }
+                ],
+                "Comments":[
+                    {
+                        "type":"checkmark",
+                        "label":"Always capitalize comments",
+                        "caption":"LenStudio will automatically capitalize comments",
+                        "name":"caplock_comments"
+                    },
+                    {
+                        "type":"checkmark",
+                        "label":"Show warning for missing comment",
+                        "caption":"A warning will be shown when changing system without entering a comment",
+                        "name":"require_comment"
+                    }
+                ]
+        },
+        "Quick Inspection":{
+            "Inspection flow": [
+                {
+                    "type":"section label",
+                    "label":"Modify order of selected fields",
+                    "caption":"List and modify the order of fields that will be selected consecutively during Quick Inspection mode.\nAt least one field must be selected."
+                },
+                {
+                    "type":"drag order list",
+                    "name":"quick_inspection_field_order"
+                },
+                {
+                    "type":"section label",
+                    "label":"Move-forward key",
+                    "caption":"Select from the available keys to move to the next field during Quick Inspection mode."
+                },
+                {
+                    "type":"radio select",
+                    "label":"Select move-forward key:",
+                    "name":"quick_inspection_next_key_choice",
+                    "options":["Enter","Tab","Space"]
+                }
+            ],
+            "Time Budget": [
+                {
+                    "type":"section label",
+                    "label":"Pacing reference",
+                    "caption":"A soft time target per system. A draining bar appears between the navigation buttons as a gentle reminder — it never auto-advances or blocks input. Set to 0 to disable."
+                },
+                {
+                    "type":"number input",
+                    "label":"Target time per system",
+                    "name":"pace_seconds",
+                    "minimum":0,
+                    "maximum":300,
+                    "suffix":"sec",
+                    "step":15
+                }
+            ]
+        },
+        "Navigation": {
+            "General": [
+                {
+                    "type":"checkmark",
+                    "label":"Loop at end of catalog",
+                    "caption":"When you reach the last system, navigation wraps back to the first instead of stopping.",
+                    "name":"loop_at_end"
+                },
+                {
+                    "type":"checkmark",
+                    "label":"Warn before revisiting graded systems",
+                    "caption":"Show a confirmation prompt when navigating to a system that already has a grade assigned.",
+                    "name":"warn_regrading"
+                },
+                {
+                    "type":"checkmark",
+                    "label":"Confirm before closing",
+                    "caption":"Ask for confirmation before quitting LenStudio.",
+                    "name":"confirm_on_close"
+                }
+            ]
+        },
+        "Appearance": {
+            "Default Survey": [
+                {
+                    "type":"section label",
+                    "label":"Survey on session start",
+                    "caption":"The data release loaded automatically when a new inspection session begins."
+                },
+                {
+                    "type":"radio select",
+                    "label":"Default survey:",
+                    "name":"default_survey",
+                    "options":["DR9","DR10","DR11"]
+                }
+            ],
+            "Images": [
+                {
+                    "type":"checkmark",
+                    "label":"Reset contrast sliders on navigation",
+                    "caption":"Restore all GRZ contrast sliders to their default position (center) each time you move to a new system.",
+                    "name":"reset_contrast_on_nav"
+                }
+            ]
+        }
+    }
+}

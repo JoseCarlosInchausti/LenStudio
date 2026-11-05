@@ -1,327 +1,655 @@
-from PyQt6.QtWidgets import QFileDialog,QPushButton,QListWidgetItem,QListWidget,QCheckBox, QWidget,QVBoxLayout,QHBoxLayout,QLabel,QTableWidget,QTableWidgetItem,QAbstractItemView, QGroupBox, QSpacerItem
-from PyQt6.QtGui import QFont, QPixmap
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QFileDialog, QPushButton, QListWidget, QListWidgetItem,
+                             QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                             QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox,
+                             QLineEdit, QScrollArea, QFrame, QStackedWidget, QHeaderView,
+                             QStyledItemDelegate, QDialog, QListView, QTreeView)
+from PyQt6.QtCore import Qt, QSize
 import numpy as np
-import csv
 import re
-from Assets import InputField, DropdownMenu, ScrollableList, ClickEffectButton, CheckBox, SvgWidget, show_popup_window
 from pathlib import Path
+from Assets import SvgWidget, show_popup_window
+from Icons import tabler_icon, badge_pixmap, OutlineIcon, ICON_WHITE
+
+# ---------------------------------------------------------------------------
+# Design system
+# ---------------------------------------------------------------------------
+BG        = "#0a1628"   # page canvas (deep dark)
+SURFACE   = "#0d1a2e"   # header / action bar
+CARD      = "#152238"   # card background
+FIELD     = "#2e466c"   # input background (intentionally lighter than CARD so fields stand out)
+BORDER    = "#27364d"   # card / divider border
+FIELD_BRD = "#4a6188"   # input border (brighter than card border so fields are clearly outlined)
+ACCENT    = "#4A9EFF"   # primary / focus
+WARN      = "#ffb454"   # overwrite warning
+TXT       = "#e8edf5"   # primary text
+TXT_SOFT  = "#c3cde0"   # labels
+TXT_MUTE  = "#8a99b3"   # captions
+
+_FOLDER_DLG_SS = f"""
+    QFileDialog, QDialog {{
+        background:{CARD}; color:{TXT};
+    }}
+    QFileDialog QLabel {{ color:{TXT}; background:transparent; }}
+    QFileDialog QLineEdit {{
+        background:{FIELD}; color:{TXT}; border:1px solid {FIELD_BRD};
+        border-radius:6px; padding:4px 8px;
+    }}
+    QFileDialog QPushButton {{
+        background:{ACCENT}; color:white; border:none;
+        border-radius:6px; padding:5px 14px; font-weight:600;
+    }}
+    QFileDialog QPushButton:hover {{ background:#5fb0ff; }}
+    QFileDialog QPushButton[text="Cancel"] {{
+        background:transparent; color:{TXT_SOFT}; border:1px solid {BORDER};
+    }}
+    QFileDialog QPushButton[text="Cancel"]:hover {{ border-color:{FIELD_BRD}; color:{TXT}; }}
+    QFileDialog QComboBox {{
+        background:{FIELD}; color:{TXT}; border:1px solid {FIELD_BRD}; border-radius:6px; padding:3px 8px;
+    }}
+    QFileDialog QComboBox QAbstractItemView {{
+        background:{CARD}; color:{TXT}; selection-background-color:{ACCENT};
+    }}
+    QFileDialog QHeaderView::section {{
+        background:BG; color:{TXT_MUTE}; border:none; padding:4px;
+    }}
+    QFileDialog QListView, QFileDialog QTreeView {{
+        background:{CARD}; color:{TXT}; border:1px solid {BORDER}; border-radius:6px;
+    }}
+    QFileDialog QListView::item:selected, QFileDialog QTreeView::item:selected {{
+        background:{ACCENT}; color:white;
+    }}
+    QFileDialog QSplitter {{ background:{BG}; }}
+    QFileDialog QScrollBar:vertical {{
+        background:transparent; width:5px; border:none;
+    }}
+    QFileDialog QScrollBar::handle:vertical {{
+        background:{BORDER}; border-radius:2px; min-height:20px;
+    }}
+    QFileDialog QScrollBar::add-line:vertical,
+    QFileDialog QScrollBar::sub-line:vertical {{ height:0; }}
+    QFileDialog QToolButton {{
+        background:transparent; color:{TXT_SOFT}; border:none;
+    }}
+    QFileDialog QToolButton:hover {{ color:{TXT}; }}
+"""
+
+QSS = f"""
+QWidget#preInspectionPage {{ background-color: {BG}; }}
+
+QFrame#header, QFrame#actionBar {{ background-color: {SURFACE}; }}
+QFrame#header     {{ border-bottom: 1px solid #1e2c44; }}
+QFrame#actionBar  {{ border-top: 1px solid #1e2c44; }}
+
+QLabel {{ color: {TXT}; background: transparent; }}
+QLabel#pageTitle    {{ font-size: 21px; font-weight: 700; color: #ffffff; }}
+QLabel#pageSubtitle {{ font-size: 12px; color: {TXT_MUTE}; }}
+QLabel#cardTitle    {{ font-size: 15px; font-weight: 600; color: #ffffff; }}
+QLabel#caption      {{ font-size: 12px; color: {TXT_MUTE}; }}
+QLabel#fieldLabel   {{ font-size: 12px; font-weight: 600; color: {TXT_SOFT}; }}
+QLabel#warning      {{ font-size: 12px; color: {WARN}; }}
+
+QFrame#card {{ background-color: {CARD}; border: 1px solid {BORDER}; border-radius: 12px; }}
+
+QScrollArea#configScroll {{ background: transparent; border: none; }}
+QWidget#scrollBody {{ background: transparent; }}
+
+QComboBox, QLineEdit {{
+    background-color: {FIELD}; color: {TXT};
+    border: 1px solid {FIELD_BRD}; border-radius: 8px; padding: 7px 10px;
+    selection-background-color: {ACCENT}; selection-color: white;
+}}
+QComboBox:hover {{ border-color: #3d5278; }}
+QComboBox:focus, QLineEdit:focus {{ border-color: {ACCENT}; }}
+QLineEdit:disabled {{ color: #5c6b85; background-color: #111c2e; border-color: #223049; }}
+QComboBox::drop-down {{ border: none; width: 22px; }}
+QComboBox QAbstractItemView {{
+    background-color: {FIELD}; color: {TXT};
+    border: 1px solid {FIELD_BRD}; border-radius: 8px; outline: none;
+    selection-background-color: {ACCENT}; selection-color: white;
+}}
+QComboBox QAbstractItemView::item {{ color: {TXT}; background-color: {FIELD}; padding: 5px 8px; }}
+QComboBox QAbstractItemView::item:hover {{ color: {TXT}; background-color: #3a5480; }}
+QComboBox QAbstractItemView::item:selected {{ color: white; background-color: {ACCENT}; }}
+
+QPushButton#seg {{ border: 1px solid {FIELD_BRD}; background: {FIELD};
+                   color: {TXT_MUTE}; padding: 7px 18px; font-weight: 600; }}
+QPushButton#seg:hover[active="false"] {{ background: #17273f; color: {TXT_SOFT}; }}
+QPushButton#seg[active="true"] {{ background: {ACCENT}; color: white; border-color: {ACCENT}; }}
+QPushButton#segLeft  {{ border-top-left-radius: 8px; border-bottom-left-radius: 8px; }}
+QPushButton#segRight {{ border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-left: none; }}
+
+QPushButton#primary {{ background: {ACCENT}; color: white; border: none; border-radius: 10px;
+                       padding: 9px 26px; font-size: 14px; font-weight: 700; }}
+QPushButton#primary:hover  {{ background: #5fb0ff; }}
+QPushButton#primary:pressed {{ background: #3d8de0; }}
+QPushButton#ghost {{ background: transparent; color: {TXT_SOFT}; border: 1px solid #33425c;
+                     border-radius: 10px; padding: 9px 22px; font-size: 14px; font-weight: 600; }}
+QPushButton#ghost:hover {{ background: #17273f; color: white; }}
+QPushButton#browse {{ background: #1c2a42; color: {TXT}; border: 1px solid #33425c;
+                      border-radius: 8px; padding: 7px 16px; font-weight: 600; }}
+QPushButton#browse:hover {{ background: #243a5a; }}
+QPushButton#linkBtn {{ background: transparent; color: {ACCENT}; border: none; font-weight: 600; }}
+QPushButton#linkBtn:hover {{ color: #7dbaff; }}
+
+QListWidget#cols {{ background-color: {FIELD}; border: 1px solid {FIELD_BRD}; border-radius: 8px;
+                    color: {TXT}; padding: 4px; outline: none; }}
+QListWidget#cols::item {{ padding: 5px 6px; border-radius: 6px; }}
+QListWidget#cols::item:hover {{ background-color: #3a5480; }}
+QListWidget#cols::indicator, QCheckBox::indicator {{ width: 16px; height: 16px;
+                    border: 1px solid #3d5278; border-radius: 4px; background: {FIELD}; }}
+QListWidget#cols::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+
+QCheckBox {{ color: {TXT_SOFT}; spacing: 8px; background: transparent; }}
+QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+QCheckBox#warnCheck::indicator:checked {{ background: {WARN}; border-color: {WARN}; }}
+
+QTableWidget#preview {{ background-color: {FIELD}; alternate-background-color: #132138;
+                        color: #dce3f0; gridline-color: #223049; border: 1px solid {FIELD_BRD};
+                        border-radius: 8px; }}
+QTableWidget#preview QHeaderView::section {{ background-color: #1c2a42; color: #aeb9cf;
+                        border: none; border-right: 1px solid #223049; padding: 7px 9px;
+                        font-weight: 600; }}
+QTableWidget#preview QTableCornerButton::section {{ background: #1c2a42; border: none; }}
+
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: #3a4a62; min-height: 24px; border-radius: 5px; }}
+QScrollBar::handle:vertical:hover {{ background: #4a5c78; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+QScrollBar::handle:horizontal {{ background: #3a4a62; min-width: 24px; border-radius: 5px; }}
+QScrollBar::handle:horizontal:hover {{ background: #4a5c78; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+"""
+
+PREVIEW_ROW_CAP = 200
+
 
 class PreInspectionWidget(QWidget):
-    def __init__(self,main_window):
+    def __init__(self, main_window):
         super().__init__()
-        self.main_window=main_window
-        self.df_existing_columns=self.main_window.df_existing_columns
-        self.inspection_parameters={}
+        self.main_window = main_window
+        self.df_existing_columns = self.main_window.df_existing_columns
+        self.inspection_parameters = {}
+        self.grader_mode = 'existing'
+        self.save_directory = str(Path(self.main_window.csv_path).parent)
 
-        self.window_layout = QVBoxLayout()
-        self.page_layout = QHBoxLayout()
-        self.setting_outline = QVBoxLayout()
-        self.preview_outline = QVBoxLayout()
-        self.window_layout.addLayout(self.page_layout)
-        self.page_layout.addLayout(self.preview_outline, 1)
-        self.page_layout.addLayout(self.setting_outline, 1)
+        self.setObjectName("preInspectionPage")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(QSS)
 
-        # Build settings column:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # Grader name
-        self.add_text('Set up inspection settings', size=20,host_layout=self.setting_outline,bold=True)
-        self.grader_info_layout = QVBoxLayout()
-        #Existing graders
+        root.addWidget(self._build_header())
+
+        body = QHBoxLayout()
+        body.setContentsMargins(28, 12, 28, 16)
+        body.setSpacing(20)
+        body.addWidget(self._build_config_panel(), 6)
+        body.addWidget(self._build_preview_panel(), 5)
+        root.addLayout(body, 1)
+
+    # ------------------------------------------------------------------ UI build
+    def _build_header(self):
+        bar = QFrame()
+        bar.setObjectName("header")
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(28, 9, 28, 9)
+        lay.setSpacing(14)
+        logo = SvgWidget(self.main_window.GRAPHICS_ADDRESSES['large app icon'])
+        logo.setFixedSize(32, 32)
+        lay.addWidget(logo)
+        titles = QVBoxLayout()
+        titles.setSpacing(1)
+        title = QLabel("Set up inspection")
+        title.setObjectName("pageTitle")
+        subtitle = QLabel("Configure how this catalog will be reviewed")
+        subtitle.setObjectName("pageSubtitle")
+        titles.addWidget(title)
+        titles.addWidget(subtitle)
+        lay.addLayout(titles)
+        lay.addStretch()
+
+        back = QPushButton("  Back")
+        back.setObjectName("ghost")
+        back.setIcon(tabler_icon(OutlineIcon.ARROW_LEFT, size=16, color=TXT_SOFT))
+        back.setIconSize(QSize(16, 16))
+        back.setCursor(Qt.CursorShape.PointingHandCursor)
+        back.clicked.connect(lambda: self.main_window.switch_screens(0))
+        self.return_home_button = back
+        start = QPushButton("  Start inspection")
+        start.setObjectName("primary")
+        start.setIcon(tabler_icon(OutlineIcon.TELESCOPE, size=16, color=ICON_WHITE))
+        start.setIconSize(QSize(16, 16))
+        start.setCursor(Qt.CursorShape.PointingHandCursor)
+        start.clicked.connect(self.validate_entries)
+        self.start_inspection_button = start
+        lay.addWidget(back)
+        lay.addSpacing(4)
+        lay.addWidget(start)
+        return bar
+
+    def _build_config_panel(self):
+        scroll = QScrollArea()
+        scroll.setObjectName("configScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.viewport().setStyleSheet("background: transparent;")
+
+        container = QWidget()
+        container.setObjectName("scrollBody")
+        col = QVBoxLayout(container)
+        col.setContentsMargins(2, 2, 12, 2)
+        col.setSpacing(16)
+        col.addWidget(self._card_inspector())
+        col.addWidget(self._card_coordinates())
+        col.addWidget(self._card_columns())
+        col.addWidget(self._card_output())
+        col.addStretch()
+        scroll.setWidget(container)
+        return scroll
+
+    def _card(self, icon, title, subtitle=None):
+        """Return (card_frame, content_layout) with an icon header already added."""
+        card = QFrame()
+        card.setObjectName("card")
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(18, 16, 18, 18)
+        outer.setSpacing(12)
+
+        head = QHBoxLayout()
+        head.setSpacing(11)
+        badge = QLabel()
+        badge.setFixedSize(26, 26)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setPixmap(badge_pixmap(icon, diameter=26, icon_size=14))
+        head.addWidget(badge, alignment=Qt.AlignmentFlag.AlignTop)
+
+        tbox = QVBoxLayout()
+        tbox.setSpacing(2)
+        tl = QLabel(title)
+        tl.setObjectName("cardTitle")
+        tbox.addWidget(tl)
+        if subtitle:
+            sl = QLabel(subtitle)
+            sl.setObjectName("caption")
+            sl.setWordWrap(True)
+            tbox.addWidget(sl)
+        head.addLayout(tbox)
+        head.addStretch()
+        outer.addLayout(head)
+        return card, outer
+
+    def _make_combo(self, items, preset_idx=0):
+        combo = QComboBox()
+        combo.addItems(items)
+        combo.setCurrentIndex(preset_idx)
+        # Force a stylesheet-aware delegate so popup item text colours apply
+        # (native macOS popups otherwise ignore the ::item colour rules).
+        combo.setItemDelegate(QStyledItemDelegate(combo))
+        return combo
+
+    def _labeled(self, text, widget):
+        """A field label stacked above a widget, returned as a layout."""
+        box = QVBoxLayout()
+        box.setSpacing(5)
+        lbl = QLabel(text)
+        lbl.setObjectName("fieldLabel")
+        box.addWidget(lbl)
+        box.addWidget(widget)
+        return box
+
+    def _labeled_layout(self, text, inner_layout):
+        box = QVBoxLayout()
+        box.setSpacing(5)
+        lbl = QLabel(text)
+        lbl.setObjectName("fieldLabel")
+        box.addWidget(lbl)
+        box.addLayout(inner_layout)
+        return box
+
+    # -- Card 1: Inspector --------------------------------------------------
+    def _card_inspector(self):
+        card, lay = self._card(OutlineIcon.USER, "Inspector", "Who is reviewing this catalog?")
         self.existing_graders_found = self.check_for_existing_grader()
+
+        self.new_name_edit = QLineEdit()
+        self.new_name_edit.setPlaceholderText("Enter a new inspector name")
+
         if self.existing_graders_found:
-            self.dropdown_existing_graders=DropdownMenu(label_text="Choose from existing inspector:",drop_down_items=self.existing_graders,main_window=self.main_window)
-            self.dropdown_checkbox = self.create_checkbox(True)
-            self.dropdown_existing_graders.insertWidget(0,self.dropdown_checkbox)
-            self.grader_info_layout.addLayout(self.dropdown_existing_graders)
-            grader_name_input_box_label = "Type new inspector name:"
-            add_checkmark=True
+            self.existing_combo = self._make_combo(sorted(self.existing_graders))
+
+            seg = QHBoxLayout()
+            seg.setSpacing(0)
+            self.seg_existing = QPushButton("Existing inspector")
+            self.seg_new = QPushButton("New inspector")
+            for btn in (self.seg_existing, self.seg_new):
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.seg_existing.clicked.connect(lambda: self._set_grader_mode('existing'))
+            self.seg_new.clicked.connect(lambda: self._set_grader_mode('new'))
+            seg.addWidget(self.seg_existing)
+            seg.addWidget(self.seg_new)
+            seg.addStretch()
+            lay.addLayout(seg)
+
+            self.grader_stack = QStackedWidget()
+            self.grader_stack.setStyleSheet("background: transparent;")
+            page_existing = QWidget()
+            page_existing.setStyleSheet("background: transparent;")
+            pe = QVBoxLayout(page_existing)
+            pe.setContentsMargins(0, 0, 0, 0)
+            pe.addLayout(self._labeled("Select inspector", self.existing_combo))
+            page_new = QWidget()
+            page_new.setStyleSheet("background: transparent;")
+            pn = QVBoxLayout(page_new)
+            pn.setContentsMargins(0, 0, 0, 0)
+            pn.addLayout(self._labeled("Inspector name", self.new_name_edit))
+            self.grader_stack.addWidget(page_existing)
+            self.grader_stack.addWidget(page_new)
+            lay.addWidget(self.grader_stack)
+            self._set_grader_mode('existing')
         else:
-            self.add_text("No existing graders were found in this CSV. Enter an new inspector name below.",size=int(0.9*self.main_window.FONT_SIZES["input box labels"]),host_layout=self.grader_info_layout,bold=False)
-            grader_name_input_box_label = "New inspector name:"
-            add_checkmark=False
-        # self.grader_info_layout.addSpacerItem(QSpacerItem(0, 10))
-        #Grader name
-        self.grader_name_layout = InputField(label_text=grader_name_input_box_label,main_window=self.main_window)
-        if add_checkmark:
-            self.input_new_grader_checkbox = self.create_checkbox(False)
-            self.input_new_grader_checkbox.stateChanged.connect(lambda state: self.define_grader_name(state, self.dropdown_checkbox))
-            self.dropdown_checkbox.stateChanged.connect(lambda state: self.define_grader_name(state, self.input_new_grader_checkbox))
-            self.grader_name_layout.insertWidget(0,self.input_new_grader_checkbox)
-        self.grader_info_layout.addLayout(self.grader_name_layout)
+            self.grader_mode = 'new'
+            note = QLabel("No existing inspectors were found in this catalog — enter a new name below.")
+            note.setObjectName("caption")
+            note.setWordWrap(True)
+            lay.addWidget(note)
+            lay.addLayout(self._labeled("Inspector name", self.new_name_edit))
+        return card
 
-        #Column selection
+    def _set_grader_mode(self, mode):
+        self.grader_mode = mode
+        for btn, btn_mode, side in ((self.seg_existing, 'existing', 'left'),
+                                    (self.seg_new, 'new', 'right')):
+            is_active = (mode == btn_mode)
+            radius = ("border-top-left-radius:8px;border-bottom-left-radius:8px;"
+                      if side == 'left' else
+                      "border-top-right-radius:8px;border-bottom-right-radius:8px;border-left:none;")
+            if is_active:
+                btn.setStyleSheet(
+                    "QPushButton{{background:{a};color:white;border:1px solid {a};"
+                    "padding:7px 18px;font-weight:600;{r}}}".format(a=ACCENT, r=radius))
+            else:
+                btn.setStyleSheet(
+                    "QPushButton{{border:1px solid {b};background:{f};color:{m};"
+                    "padding:7px 18px;font-weight:600;{r}}}"
+                    "QPushButton:hover{{background:#17273f;color:{s};}}".format(
+                        b=FIELD_BRD, f=FIELD, m=TXT_MUTE, s=TXT_SOFT, r=radius))
+        self.grader_stack.setCurrentIndex(0 if mode == 'existing' else 1)
 
-        #RA and Dec:
-        self.column_info_layout = QVBoxLayout()
-        self.ra_dec_layout = QHBoxLayout()
-        ra_dec_idxs = self.check_for_ra_dec_columns()
-        self.ra_dropdown, self.dec_dropdown = DropdownMenu(label_text='R.A. column:',drop_down_items=self.df_existing_columns,main_window=self.main_window,preset_idx=ra_dec_idxs[0]), DropdownMenu(label_text='Dec. column:',drop_down_items=self.df_existing_columns,main_window=self.main_window,preset_idx=ra_dec_idxs[1])
-        self.ra_dec_layout.addLayout(self.ra_dropdown), self.ra_dec_layout.addLayout(self.dec_dropdown)
-        self.column_info_layout.addLayout(self.ra_dec_layout)
-        #Custom column selection:
-        self.all_columns_list = ScrollableList(items=self.df_existing_columns,connected_function=self.update_selected_columns_checkbox_list)
-        self.selected_columns_checkbox_list = QListWidget()
-        self.selected_columns_checkbox_list.setStyleSheet(self.all_columns_list.style)
-        self.two_lists_titles = QHBoxLayout()
-        self.add_text('All available columns', size=self.main_window.FONT_SIZES["input box labels"],host_layout=self.two_lists_titles,bold=False)
-        self.add_text('Selected columns', size=self.main_window.FONT_SIZES["input box labels"],host_layout=self.two_lists_titles,bold=False)
-        self.two_lists_layout = QHBoxLayout()
-        self.two_lists_layout.addWidget(self.all_columns_list), self.two_lists_layout.addWidget(self.selected_columns_checkbox_list)
-        self.add_text('Select additional columns to display during inspection:', size=self.main_window.FONT_SIZES["input box labels"],host_layout=self.column_info_layout,bold=False)
-        self.column_info_layout.addLayout(self.two_lists_titles)
-        self.column_info_layout.addLayout(self.two_lists_layout)
+    # -- Card 2: Coordinates ------------------------------------------------
+    def _card_coordinates(self):
+        card, lay = self._card(OutlineIcon.MAP_PIN, "Coordinates",
+                               "Which columns hold the sky position (R.A. / Dec.)?")
+        ra_idx, dec_idx = self.check_for_ra_dec_columns()
+        self.ra_combo = self._make_combo(self.df_existing_columns, ra_idx)
+        self.dec_combo = self._make_combo(self.df_existing_columns, dec_idx)
+        row = QHBoxLayout()
+        row.setSpacing(16)
+        row.addLayout(self._labeled("R.A. column [deg]", self.ra_combo), 1)
+        row.addLayout(self._labeled("Dec. column [deg]", self.dec_combo), 1)
+        lay.addLayout(row)
+        return card
 
-        #Saving settings
-        # New directory:
-        self.saving_settings_layout = QVBoxLayout()
-        self.inspection_name_layout = InputField(label_text="Inspection name:",main_window=self.main_window)
-        self.inspection_name_layout.input_field.setText(self.determine_default_name())
-        self.new_inspection_file_checkbox = self.create_checkbox(True)
-        self.new_inspection_file_checkbox.stateChanged.connect(self.turn_off_overwritte)
-        self.inspection_name_layout.insertWidget(0,self.new_inspection_file_checkbox)
-        self.add_text('Select directory:', size=self.main_window.FONT_SIZES["input box labels"],host_layout=self.inspection_name_layout,bold=False)
-        self.directory_browse_button = self.create_directory_browse_button()
-        self.inspection_name_layout.addWidget(self.directory_browse_button)
-        self.saving_settings_layout.addLayout(self.inspection_name_layout)
-        # Overwrite:
-        self.overwritte_checkbox = CheckBox('Edit selected CSV directly',main_window=self.main_window).checkbox
-        self.overwritte_checkbox.stateChanged.connect(self.display_overwritte_warning)
-        self.saving_settings_layout.addWidget(self.overwritte_checkbox)
-        self.overwritte_warning_label = self.add_text("WARNING: Original CSV content may be overwritten.",size=self.main_window.FONT_SIZES["input box labels"],host_layout=None,bold=True,warning=True)
-        self.overwritte_warning_label.setVisible(False)
-        self.saving_settings_layout.addWidget(self.overwritte_warning_label)
+    # -- Card 3: Columns to display ----------------------------------------
+    def _card_columns(self):
+        card, lay = self._card(OutlineIcon.COLUMNS, "Columns to display",
+                               "Optional — extra catalog fields to show while inspecting.")
+        self.col_search = QLineEdit()
+        self.col_search.setPlaceholderText("Search columns…")
+        self.col_search.addAction(tabler_icon(OutlineIcon.SEARCH, size=15, color=TXT_MUTE),
+                                  QLineEdit.ActionPosition.LeadingPosition)
+        self.col_search.textChanged.connect(self._filter_columns)
+        lay.addWidget(self.col_search)
 
-        self.grader_info_box = self.create_group_box(box_title="Inspector Information",box_content_layout=self.grader_info_layout)
-        self.setting_outline.addWidget(self.grader_info_box)
+        self.columns_list = QListWidget()
+        self.columns_list.setObjectName("cols")
+        self.columns_list.setMinimumHeight(170)
+        for name in self.df_existing_columns:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.columns_list.addItem(item)
+        self.columns_list.itemChanged.connect(self._update_col_count)
+        lay.addWidget(self.columns_list)
 
-        self.column_selection_box = self.create_group_box(box_title="Select Columns",box_content_layout=self.column_info_layout)
-        self.setting_outline.addWidget(self.column_selection_box)
+        foot = QHBoxLayout()
+        self.col_count_label = QLabel("0 / 3 selected")
+        self.col_count_label.setObjectName("caption")
+        foot.addWidget(self.col_count_label)
+        foot.addStretch()
+        clear = QPushButton("Clear all")
+        clear.setObjectName("linkBtn")
+        clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear.clicked.connect(self._clear_columns)
+        foot.addWidget(clear)
+        lay.addLayout(foot)
+        return card
 
-        self.saving_settings_box = self.create_group_box(box_title="Saving Settings",box_content_layout=self.saving_settings_layout)
-        self.setting_outline.addWidget(self.saving_settings_box)
+    def _filter_columns(self, text):
+        text = text.lower().strip()
+        for i in range(self.columns_list.count()):
+            item = self.columns_list.item(i)
+            item.setHidden(text not in item.text().lower())
 
-        self.setting_outline.addStretch()
+    def _update_col_count(self, item=None):
+        if item is not None and item.checkState() == Qt.CheckState.Checked:
+            n = sum(1 for i in range(self.columns_list.count())
+                    if self.columns_list.item(i).checkState() == Qt.CheckState.Checked)
+            if n > 3:
+                self.columns_list.blockSignals(True)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.columns_list.blockSignals(False)
+        n = sum(1 for i in range(self.columns_list.count())
+                if self.columns_list.item(i).checkState() == Qt.CheckState.Checked)
+        self.col_count_label.setText(f"{n} / 3 selected")
 
-        # Build CSV preview column
-        self.add_text('CSV preview', size=20,host_layout=self.preview_outline,bold=True)
-        self.display_table(host_layout=self.preview_outline)
+    def _clear_columns(self):
+        for i in range(self.columns_list.count()):
+            self.columns_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
-        #Bottom buttons
-        self.bottom_buttons_layout=QHBoxLayout()
-        self.bottom_buttons_layout.setContentsMargins(0, 0, 0, 0)
-        self.return_home_button = ClickEffectButton(self.main_window.GRAPHICS_ADDRESSES['return home unclicked'],self.main_window.GRAPHICS_ADDRESSES['return home clicked'],size1=200, size2=200)
-        self.return_home_button.clicked.connect(lambda: self.main_window.switch_screens(0))       
-        self.start_inspection_button = ClickEffectButton(self.main_window.GRAPHICS_ADDRESSES['start inspection unclicked'],self.main_window.GRAPHICS_ADDRESSES['start inspection clicked'],size1=200, size2=200)
-        self.start_inspection_button.clicked.connect(self.validate_entries)       
-        self.bottom_buttons_layout.addStretch()
-        self.bottom_buttons_layout.addWidget(self.return_home_button)
-        self.add_logo_to_layout()
-        self.bottom_buttons_layout.addWidget(self.start_inspection_button)
-        self.bottom_buttons_layout.addStretch()
-        self.window_layout.addLayout(self.bottom_buttons_layout)
+    # -- Card 4: Output -----------------------------------------------------
+    def _card_output(self):
+        card, lay = self._card(OutlineIcon.DEVICE_FLOPPY, "Output",
+                               "Where your grades and comments will be saved.")
+        self.inspection_name_edit = QLineEdit()
+        self.inspection_name_edit.setText(self.determine_default_name())
+        lay.addLayout(self._labeled("Inspection file name", self.inspection_name_edit))
 
-        self.setLayout(self.window_layout)
+        self.folder_display = QLineEdit(self.save_directory)
+        self.folder_display.setReadOnly(True)
+        browse = QPushButton("  Browse…")
+        browse.setObjectName("browse")
+        browse.setIcon(tabler_icon(OutlineIcon.FOLDER, size=15, color=TXT))
+        browse.setIconSize(QSize(15, 15))
+        browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse.clicked.connect(self.open_file_browser)
+        self.directory_browse_button = browse
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(10)
+        folder_row.addWidget(self.folder_display, 1)
+        folder_row.addWidget(browse)
+        lay.addLayout(self._labeled_layout("Save folder", folder_row))
+
+        self.overwrite_checkbox = QCheckBox("Edit the original CSV directly (overwrites existing data)")
+        self.overwrite_checkbox.setObjectName("warnCheck")
+        self.overwrite_checkbox.stateChanged.connect(self._toggle_overwrite)
+        lay.addWidget(self.overwrite_checkbox)
+        self.overwrite_warning = QLabel(
+            "⚠  The original file will be modified — existing grades and comments may be overwritten.")
+        self.overwrite_warning.setObjectName("warning")
+        self.overwrite_warning.setWordWrap(True)
+        self.overwrite_warning.setVisible(False)
+        lay.addWidget(self.overwrite_warning)
+        return card
+
+    def _toggle_overwrite(self, state):
+        checked = state == Qt.CheckState.Checked.value
+        self.inspection_name_edit.setDisabled(checked)
+        self.overwrite_warning.setVisible(checked)
+
+    # -- Preview panel ------------------------------------------------------
+    def _build_preview_panel(self):
+        card = QFrame()
+        card.setObjectName("card")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(16, 14, 16, 16)
+        lay.setSpacing(10)
+
+        header = QHBoxLayout()
+        title = QLabel("Data preview")
+        title.setObjectName("cardTitle")
+        header.addWidget(title)
+        header.addStretch()
+        fname = Path(self.main_window.csv_path).name
+        nrows, ncols = self.main_window.df.shape
+        meta = QLabel(f"{fname}   ·   {nrows:,} rows × {ncols} cols")
+        meta.setObjectName("caption")
+        header.addWidget(meta)
+        lay.addLayout(header)
+
+        self._build_table()
+        lay.addWidget(self.table_widget, 1)
+
+        if nrows > PREVIEW_ROW_CAP:
+            hint = QLabel(f"Showing first {PREVIEW_ROW_CAP} rows")
+            hint.setObjectName("caption")
+            lay.addWidget(hint)
+        return card
+
+    def _build_table(self):
+        df = self.main_window.df
+        n_rows = min(len(df), PREVIEW_ROW_CAP)
+        self.table_widget = QTableWidget(n_rows, len(df.columns))
+        self.table_widget.setObjectName("preview")
+        self.table_widget.setHorizontalHeaderLabels([str(c) for c in df.columns])
+        self.table_widget.verticalHeader().setVisible(False)
+        self.table_widget.setAlternatingRowColors(True)
+        self.table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table_widget.setShowGrid(True)
+        self.table_widget.horizontalHeader().setDefaultSectionSize(110)
+        self.table_widget.horizontalHeader().setStretchLastSection(False)
+        for r in range(n_rows):
+            for c in range(len(df.columns)):
+                self.table_widget.setItem(r, c, QTableWidgetItem(str(df.iat[r, c])))
+
+    # ------------------------------------------------------------- behaviour
+    def open_file_browser(self):
+        dlg = QFileDialog(self, "Choose save folder")
+        dlg.setFileMode(QFileDialog.FileMode.Directory)
+        dlg.setOption(QFileDialog.Option.DontUseNativeDialog)
+        dlg.setOption(QFileDialog.Option.ShowDirsOnly)
+        if self.save_directory:
+            dlg.setDirectory(self.save_directory)
+        dlg.setStyleSheet(_FOLDER_DLG_SS)
+        for view in dlg.findChildren((QListView, QTreeView)):
+            view.setStyleSheet(f"background:{CARD}; color:{TXT}; border:none;")
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            folder_path = dlg.selectedFiles()[0] if dlg.selectedFiles() else ""
+            if folder_path:
+                self.save_directory = folder_path
+                self.folder_display.setText(folder_path)
 
     def validate_entries(self):
         self.compile_all_entries()
         errors = []
-        #Confirm inspector information:
+        # Confirm inspector information:
         unique_characters_in_name = list(set(self.inspection_parameters['grader name']))
-        if len(self.inspection_parameters['grader name'])==0:
+        if len(self.inspection_parameters['grader name']) == 0:
             errors.append('New inspector field cannot be empty.')
-        elif len(unique_characters_in_name)==1 and unique_characters_in_name[0]==' ':
+        elif len(unique_characters_in_name) == 1 and unique_characters_in_name[0] == ' ':
             errors.append('New inspector name cannot contain spaces only.')
-        #Confirm ra dec:
+        # Confirm ra dec:
         try:
             ra_temp = self.main_window.df[self.inspection_parameters['ra column name']].values.astype(np.float64)
             del ra_temp
-        except:
+        except Exception:
             errors.append('R.A. column values could not be converted to decimals.')
         try:
             dec_temp = self.main_window.df[self.inspection_parameters['dec column name']].values.astype(np.float64)
             del dec_temp
-        except:
+        except Exception:
             errors.append('Dec. column values could not be converted to decimals.')
-        #Confirm inspection name:
+        # Confirm inspection name:
         unique_characters_in_name = list(set(self.inspection_parameters['new df name']))
-        if len(self.inspection_parameters['new df name'])==0:
+        if len(self.inspection_parameters['new df name']) == 0:
             errors.append('New inspection name cannot be empty.')
-        if len(unique_characters_in_name)==1 and unique_characters_in_name[0]==' ':
+        if len(unique_characters_in_name) == 1 and unique_characters_in_name[0] == ' ':
             errors.append('New inspection name cannot contain spaces only.')
-        for forbiden_char in [ '\\', '/', ':', '*', '?', '"', '<', '>', '|']:
+        for forbiden_char in ['\\', '/', ':', '*', '?', '"', '<', '>', '|']:
             if forbiden_char in self.inspection_parameters['new df name']:
                 errors.append('New inspection name cannot contain " {} ".'.format(forbiden_char))
-        
-        if len(errors)==0:
-            #IF there are no errors:
+
+        if len(errors) == 0:
             self.main_window.inspection_parameters = self.inspection_parameters
-            #Add missing grade and comment columns to df
             self.prepare_df_columns()
             self.main_window.switch_screens(2)
-            
-        elif len(errors)==1:
-            show_popup_window(title="An input field contains an error:",text="\n{}".format(errors[0]), header_icon_path=None)
-        elif len(errors)>1:
+        elif len(errors) == 1:
+            show_popup_window(title="An input field contains an error:", text="\n{}".format(errors[0]), header_icon_path=None)
+        elif len(errors) > 1:
             error_message = errors[0]
             for error in errors[1:]:
-                error_message+='\n'+error
-            show_popup_window(title="An input field contains an error:",text=error_message, header_icon_path=None)
-            
+                error_message += '\n' + error
+            show_popup_window(title="An input field contains an error:", text=error_message, header_icon_path=None)
+
     def prepare_df_columns(self):
-        #Add grade col
-        if self.inspection_parameters['grader name']+"_grades" not in self.df_existing_columns:
-            self.main_window.df[self.inspection_parameters['grader name']+"_grades"]=""
-        #Add column col
-        if self.inspection_parameters['grader name']+"_comments" not in self.df_existing_columns:
-            self.main_window.df[self.inspection_parameters['grader name']+"_comments"]=""
+        if self.inspection_parameters['grader name'] + "_grades" not in self.df_existing_columns:
+            self.main_window.df[self.inspection_parameters['grader name'] + "_grades"] = ""
+        if self.inspection_parameters['grader name'] + "_comments" not in self.df_existing_columns:
+            self.main_window.df[self.inspection_parameters['grader name'] + "_comments"] = ""
 
     def compile_all_entries(self):
         # Inspector information
-        if self.existing_graders_found:
-            if self.dropdown_checkbox.isChecked():
-                self.inspection_parameters['grader name'] = self.dropdown_existing_graders.dropdown.currentText() #Update grader name
-            elif self.input_new_grader_checkbox.isChecked():
-                self.inspection_parameters['grader name'] = self.grader_name_layout.input_field.text() #Update grader name
+        if self.existing_graders_found and self.grader_mode == 'existing':
+            self.inspection_parameters['grader name'] = self.existing_combo.currentText()
         else:
-            self.inspection_parameters['grader name'] = self.grader_name_layout.input_field.text() #Update grader name
+            self.inspection_parameters['grader name'] = self.new_name_edit.text()
 
         # Select columns
-        self.inspection_parameters['ra column name'] = self.ra_dropdown.dropdown.currentText() #Update RA column name
-        self.inspection_parameters['dec column name'] = self.dec_dropdown.dropdown.currentText() #Update RA column name
-        selected_columns = [item.text() for item in self.all_columns_list.selectedItems()]
-        self.inspection_parameters['additional columns'] = selected_columns if len(selected_columns)>0 else None
+        self.inspection_parameters['ra column name'] = self.ra_combo.currentText()
+        self.inspection_parameters['dec column name'] = self.dec_combo.currentText()
+        selected_columns = [self.columns_list.item(i).text()
+                            for i in range(self.columns_list.count())
+                            if self.columns_list.item(i).checkState() == Qt.CheckState.Checked]
+        self.inspection_parameters['additional columns'] = selected_columns if selected_columns else None
 
         # Saving settings
-        if self.overwritte_checkbox.isChecked():
+        if self.overwrite_checkbox.isChecked():
             self.inspection_parameters['new df name'] = self.main_window.csv_path.split('/')[-1].split('.')[0]
-        elif self.new_inspection_file_checkbox.isChecked():
-            self.inspection_parameters['new df name'] = self.inspection_name_layout.input_field.text()
+        else:
+            self.inspection_parameters['new df name'] = self.inspection_name_edit.text()
         self.inspection_parameters['save directory'] = self.save_directory
-
-    def turn_off_overwritte(self,state):
-        if state == Qt.CheckState.Checked.value:
-            self.overwritte_checkbox.setChecked(False)
-        elif state == Qt.CheckState.Unchecked.value:
-            self.overwritte_checkbox.setChecked(True)
-
-    def display_overwritte_warning(self,state):
-        if state == Qt.CheckState.Checked.value:
-            self.overwritte_warning_label.setVisible(True)
-            self.new_inspection_file_checkbox.setChecked(False)
-        elif state == Qt.CheckState.Unchecked.value:
-            self.overwritte_warning_label.setVisible(False)
-            self.new_inspection_file_checkbox.setChecked(True)
-
-    def create_directory_browse_button(self):
-        self.save_directory = str(Path(self.main_window.csv_path).parent)
-        button = QPushButton(Path(self.main_window.csv_path).parent.name)
-        button.clicked.connect(lambda:self.open_file_browser(button))
-        button.setStyleSheet("""
-                                    QPushButton {
-                                        border: 2px solid white;
-                                        background-color: #2e2e2e; /* dark gray */
-                                        color: white;
-                                        padding: 5px;
-                                        border-radius: 5px;
-                                    }
-                                    QPushButton:hover {
-                                        background-color: #3c3c3c; /* slightly lighter on hover */
-                                    }
-                                    QPushButton:pressed {
-                                        background-color: #1e1e1e; /* darker when pressed */
-                                    }
-                                """)
-        return button
-
-    def open_file_browser(self,button):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select a folder", "")
-        if folder_path:
-            self.save_directory = folder_path
-            button.setText(Path(folder_path).name)  # Change button label to file name
-
-    def add_logo_to_layout(self):
-        logo = SvgWidget(self.main_window.GRAPHICS_ADDRESSES['large app icon'])
-        logo.setFixedSize(50,50)
-
-        layout = QHBoxLayout()
-        layout.addStretch(), layout.addWidget(logo), layout.addStretch()
-        self.bottom_buttons_layout.addLayout(layout)
 
     def determine_default_name(self):
         csv_name = self.main_window.csv_path.split('/')[-1].split('.')[0]
-        #Try to obtain version number:
-        pattern = r"_v\d+$" #v followed by version number
-        match = re.search(pattern,csv_name)
+        pattern = r"_v\d+$"
+        match = re.search(pattern, csv_name)
         has_version_number = bool(match)
         try:
             if has_version_number:
                 previous_version_number = int(csv_name.split('_v')[-1])
-                new_version_number = previous_version_number+1
+                new_version_number = previous_version_number + 1
                 new_csv_name = csv_name[:-len(str(previous_version_number))]
-                return new_csv_name+'{}'.format(new_version_number)
+                return new_csv_name + '{}'.format(new_version_number)
             else:
                 new_version_number = 1
-                return csv_name+'_v{}'.format(new_version_number)
-        except:
-            return csv_name+'_v1'
-
-    def update_selected_columns_checkbox_list(self):
-        self.selected_columns_checkbox_list.clear()
-        for item in self.all_columns_list.selectedItems():
-            checkbox_item = QListWidgetItem(self.selected_columns_checkbox_list)
-            checkbox = QCheckBox(item.text())
-            checkbox.setChecked(True)
-
-            # Remove from left list selection if unchecked
-            # checkbox.stateChanged.connect(
-            #     lambda state, it=item: self.unselect_item(it) if state == Qt.CheckState.Unchecked else None
-            # )
-
-            self.selected_columns_checkbox_list.setItemWidget(checkbox_item, checkbox)
-
-    def define_grader_name(self,state,other_checkbox):
-        if state == Qt.CheckState.Checked.value:
-            other_checkbox.setChecked(False)
-        elif state == Qt.CheckState.Unchecked.value:
-            other_checkbox.setChecked(True)
-
-    def add_text(self,text,size,host_layout=None,bold=False,warning=False):
-        label = QLabel(text)
-        font = QFont()
-        if bold:
-            font.setWeight(QFont.Weight.Bold)
-        else:
-            font.setWeight(QFont.Weight.Normal)
-        font.setPointSize(size)
-        label.setFont(font)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if warning:
-            label.setStyleSheet("color: red;")
-        else:
-            label.setStyleSheet("color: white;")
-        if host_layout==None:
-            return label
-        else:
-            host_layout.addWidget(label)
-
-    def create_checkbox(self, checked=False):
-        checkbox = QCheckBox()
-        checkbox.setChecked(checked)
-        return checkbox
+                return csv_name + '_v{}'.format(new_version_number)
+        except Exception:
+            return csv_name + '_v1'
 
     def check_for_existing_grader(self):
         existing_graders = []
         for column_name in self.df_existing_columns:
-            if "_grades" in column_name: 
-                grader_name = column_name.split("_grades")[0]
-                existing_graders.append(grader_name)
+            if "_grades" in column_name:
+                existing_graders.append(column_name.split("_grades")[0])
             if "_comments" in column_name:
-                grader_name = column_name.split("_comments")[0]
-                existing_graders.append(grader_name)
-        self.existing_graders=set(existing_graders)
-        return True if len(existing_graders)>0 else False
-    
+                existing_graders.append(column_name.split("_comments")[0])
+        self.existing_graders = set(existing_graders)
+        return len(existing_graders) > 0
+
     def check_for_ra_dec_columns(self):
         df_existing_columns_lowercase = [column_name.lower() for column_name in self.df_existing_columns]
         try:
@@ -332,96 +660,4 @@ class PreInspectionWidget(QWidget):
             dec_idx = df_existing_columns_lowercase.index('dec')
         except ValueError:
             dec_idx = 1
-        return (ra_idx,dec_idx)
-
-    def create_group_box(self,box_title,box_content_layout):
-        group_box = QGroupBox(box_title)
-        group_box.setLayout(box_content_layout)
-        group_box.setStyleSheet("""
-                                QGroupBox {
-                                    border: 1px solid lightgray;
-                                    border-radius: 5px;
-                                    margin-top: 10px;
-                                }
-
-                                QGroupBox::title {
-                                subcontrol-origin: margin;
-                                subcontrol-position: top center;
-                                background-color: black;
-                                color: lightgray;
-                                padding-left: 5px;
-                                padding-right: 5px;
-                                top: -1px; /* manually raise the title to overlap */
-                                }
-                                """)
-        return group_box
-
-    def display_table(self,host_layout):
-        self.table_widget = QTableWidget()
-        self.table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) 
-
-        with open(self.main_window.csv_path, newline='', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            data = list(reader)
-
-            self.table_widget.setRowCount(len(data) - 1)
-            self.table_widget.setColumnCount(len(data[0]))
-            self.table_widget.setHorizontalHeaderLabels(data[0])  # Set headers
-
-            for row_index, row_data in enumerate(data[1:]):  # Skip header
-                for col_index, cell in enumerate(row_data):
-                    item = QTableWidgetItem(cell)
-                    
-                    self.table_widget.setItem(row_index, col_index, item)
-
-        self.table_widget.setStyleSheet("""
-                                        QTableWidget {
-                                            background-color: #2e2e2e;  /* dark gray */
-                                            color: white;               /* optional: white text */
-                                            gridline-color: #555555;    /* optional: gray gridlines */
-                                        }
-                                        QHeaderView::section {
-                                            background-color: #444444;  /* optional: darker header */
-                                            color: white;
-                                        }
-                                        QScrollBar:vertical {
-                                            background: #333;
-                                            width: 12px;
-                                            margin: 0px 0px 0px 0px;
-                                        }
-
-                                        QScrollBar::handle:vertical {
-                                            background: #888;
-                                            min-height: 20px;
-                                            border-radius: 5px;
-                                        }
-                                        QScrollBar::add-line:vertical,
-                                        QScrollBar::sub-line:vertical {
-                                            height: 0px;
-                                        }
-                                        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                                            background: none;
-                                        }
-                                        QScrollBar:horizontal {
-                                            background: #333;
-                                            height: 12px;
-                                            margin: 0px 0px 0px 0px;
-                                        }
-
-                                        QScrollBar::handle:horizontal {
-                                            background: #888;
-                                            min-width: 20px;
-                                            border-radius: 5px;
-                                        }
-
-                                        QScrollBar::add-line:horizontal,
-                                        QScrollBar::sub-line:horizontal {
-                                            width: 0px;
-                                        }
-
-                                        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                                            background: none;
-                                        }
-                                        """)
-        
-        host_layout.addWidget(self.table_widget)
+        return (ra_idx, dec_idx)

@@ -75,7 +75,7 @@ class ImageData:
     def get_redshifts(self,ra,dec,cutout_size):
         diff = 0.262*cutout_size/2/3600
         cat_url = "https://www.legacysurvey.org/viewer-desi/desi-spec-daily/1/cat.json?ralo={}&rahi={}&declo={}&dechi={}".format(ra-diff,ra+diff,dec-diff,dec+diff)
-        cat_dict = eval(requests.get(cat_url, auth=('desi', '[REDACTED]')).content)
+        cat_dict = eval(requests.get(cat_url).content)
         
         if len(cat_dict) == 1:
             return None

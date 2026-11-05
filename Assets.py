@@ -1,11 +1,64 @@
-from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox
-from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor
+from PyQt6.QtWidgets import QWidget,QComboBox,QPushButton, QMessageBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QListWidget,QCheckBox,QTextEdit,QFrame,QGroupBox,QStackedWidget,QScrollArea,QSizePolicy,QDialog
+from PyQt6.QtGui import QIcon,QFont,QPixmap, QPainter, QImage, QTextOption, QColor,QCursor,QPen,QIntValidator
+from Icons import tabler_pixmap, tabler_icon, badge_pixmap, OutlineIcon, ICON_WHITE
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import QSize, Qt, QRectF,QEvent,pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QRectF, QRect, QEvent, pyqtSignal, QTimer
+import math
+import os
+from datetime import datetime, date
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import numpy as np
+import json
+import SettingsAssets
+import Theme
+
+# ── Recent files ───────────────────────────────────────────────────────────────
+
+_RECENT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recent_files.json')
+_MAX_RECENT  = 5
+
+
+def load_recent() -> list[dict]:
+    try:
+        with open(_RECENT_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_recent(path: str):
+    entries = [e for e in load_recent() if e['path'] != path]
+    entries.insert(0, {'path': path, 'opened_at': datetime.now().isoformat()})
+    entries = entries[:_MAX_RECENT]
+    try:
+        with open(_RECENT_PATH, 'w') as f:
+            json.dump(entries, f, indent=2)
+    except Exception:
+        pass
+
+
+def format_recent_date(iso: str) -> str:
+    try:
+        d = datetime.fromisoformat(iso).date()
+        delta = (date.today() - d).days
+        if delta == 0: return 'Today'
+        if delta == 1: return 'Yesterday'
+        return d.strftime('%b %-d')
+    except Exception:
+        return ''
+
+# Shared scrollbar style — thin, minimal, theme-colored.
+# Apply wherever a QScrollArea or QListWidget needs a non-native scrollbar.
+SCROLLBAR_SS = (
+    f"QScrollBar:vertical {{ background:transparent; width:5px; border:none; margin:0; }}"
+    f"QScrollBar::handle:vertical {{ background:{Theme.BORDER}; border-radius:2px; min-height:20px; }}"
+    f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}"
+    f"QScrollBar:horizontal {{ background:transparent; height:5px; border:none; margin:0; }}"
+    f"QScrollBar::handle:horizontal {{ background:{Theme.BORDER}; border-radius:2px; min-width:20px; }}"
+    f"QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}"
+)
 
 class CheckBox():
     def __init__(self,text,main_window,background_color=None):
@@ -35,6 +88,107 @@ class StyledText(QLabel):
                                 font-size: 16px;
                                 }
                            """)
+
+class SystemJumpWidget(QWidget):
+    """Top-bar system counter. Click the number to jump to any system."""
+    jump_requested = pyqtSignal(int)  # emits 0-based index
+
+    _LABEL_SS = "QLabel { color: white; font-size: 16px; background: transparent; }"
+    _SOFT_SS  = "QLabel { color: #8a99b3; font-size: 16px; background: transparent; }"
+    _INPUT_SS = (
+        "QLineEdit { color: white; font-size: 16px; background: transparent;"
+        " border: none; border-bottom: 1px solid #4A9EFF; }"
+    )
+
+    def __init__(self):
+        super().__init__()
+        self._total = 1
+        self._current = 1
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+
+        self._stack = QStackedWidget()
+        self._stack.setSizePolicy(
+            self._stack.sizePolicy().horizontalPolicy(),
+            self._stack.sizePolicy().verticalPolicy()
+        )
+        row.addWidget(self._stack)
+
+        # Page 0 — display label
+        self._label = QLabel()
+        self._label.setStyleSheet(self._LABEL_SS)
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._stack.addWidget(self._label)
+
+        # Page 1 — inline edit ("System [__] of N")
+        edit_page = QWidget()
+        edit_page.setStyleSheet("background: transparent;")
+        edit_row = QHBoxLayout(edit_page)
+        edit_row.setContentsMargins(0, 0, 0, 0)
+        edit_row.setSpacing(4)
+
+        self._pre  = QLabel("Cutout")
+        self._pre.setStyleSheet(self._SOFT_SS)
+        self._input = QLineEdit()
+        self._input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._input.setValidator(QIntValidator(1, 999999))
+        self._input.setFixedWidth(52)
+        self._input.setStyleSheet(self._INPUT_SS)
+        self._input.returnPressed.connect(self._confirm)
+        self._suf  = QLabel()
+        self._suf.setStyleSheet(self._SOFT_SS)
+
+        edit_row.addStretch()
+        edit_row.addWidget(self._pre)
+        edit_row.addWidget(self._input)
+        edit_row.addWidget(self._suf)
+        edit_row.addStretch()
+        self._stack.addWidget(edit_page)
+
+        # Install filters after both widgets exist so eventFilter never sees a partial state
+        self._label.installEventFilter(self)
+        self._input.installEventFilter(self)
+
+    def set_system(self, current_1based, total):
+        self._current = current_1based
+        self._total   = total
+        self._label.setText(
+            f"Cutout <u style='color:#4A9EFF'>{current_1based}</u> of {total}"
+        )
+        self._suf.setText(f"of {total}")
+
+    def _enter_edit(self):
+        self._input.setText(str(self._current))
+        self._stack.setCurrentIndex(1)
+        self._input.selectAll()
+        self._input.setFocus()
+
+    def _confirm(self):
+        text = self._input.text().strip()
+        if text.isdigit():
+            n = max(1, min(int(text), self._total))
+            self.jump_requested.emit(n - 1)
+        self._exit_edit()
+
+    def _exit_edit(self):
+        self._stack.setCurrentIndex(0)
+
+    def eventFilter(self, obj, event):
+        if obj is self._label and event.type() == QEvent.Type.MouseButtonPress:
+            self._enter_edit()
+            return True
+        if obj is self._input:
+            if event.type() == QEvent.Type.KeyPress:
+                if event.key() == Qt.Key.Key_Escape:
+                    self._exit_edit()
+                    return True
+            if event.type() == QEvent.Type.FocusOut:
+                self._exit_edit()
+        return super().eventFilter(obj, event)
+
 
 class ClickEffectStyleButton(QPushButton):
     def __init__(self, text="", parent=None, size=(150, 25)):
@@ -149,27 +303,17 @@ class ScrollableList(QListWidget):
         for item in items:
             self.addItem(item)
         self.itemSelectionChanged.connect(connected_function)
-        self.style = """
-                                QListWidget {
-                                    background-color: #2e2e2e;  /* dark gray */
-                                    color: white;               /* white text */
-                                    border: 1px solid white;     /* white border */
-                                }
-                                QScrollBar:vertical {
-                                    background: #2e2e2e;
-                                    width: 12px;
-                                    margin: 0px;
-                                }
-                                QScrollBar::handle:vertical {
-                                    background: #555;
-                                    min-height: 20px;
-                                    border-radius: 4px;
-                                }
-                                QCheckBox {
-                                    color: white;
+        self.style = f"""
+                                QListWidget {{
+                                    background-color: {Theme.FIELD};
+                                    color: {Theme.TXT};
+                                    border: 1px solid {Theme.FIELD_BRD};
+                                }}
+                                QCheckBox {{
+                                    color: {Theme.TXT};
                                     background-color: transparent;
-                                }
-                            """
+                                }}
+                            """ + SCROLLBAR_SS
         self.setStyleSheet(self.style)
 
 
@@ -218,41 +362,175 @@ class SvgWidget(QSvgWidget):
         self.renderer().setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         super().resizeEvent(event)
 
-def show_popup_window(title,text,header_icon_path):
-    msg = QMessageBox()
-    msg.setWindowTitle(title)
-    # msg.setWindowIcon(QIcon(header_icon_path)) #Removes the default icon
-    msg.setText(text)
-    msg.exec()
+def show_branded_dialog(parent, title, text,
+                        icon=None, icon_bg=None,
+                        confirm=False,
+                        ok_label='OK', yes_label='Yes', no_label='Cancel'):
+    """On-brand themed modal dialog.
+
+    Returns True when the user clicks the affirmative button (OK / Yes),
+    False when they dismiss or click Cancel.  Pass confirm=True for a
+    two-button Yes/Cancel flow; otherwise a single OK button is shown.
+    """
+    if icon is None:
+        icon = OutlineIcon.INFO_CIRCLE
+    if icon_bg is None:
+        icon_bg = Theme.ACCENT
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setModal(True)
+    dlg.setFixedWidth(400)
+    dlg.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    dlg.setStyleSheet(f"""
+        QDialog {{
+            background-color: {Theme.SURFACE};
+            border: 1px solid {Theme.BORDER};
+            border-radius: 14px;
+        }}
+        QLabel {{ background: transparent; }}
+    """)
+
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(28, 28, 28, 22)
+    layout.setSpacing(0)
+
+    # Icon badge
+    badge_lbl = QLabel()
+    badge_lbl.setPixmap(badge_pixmap(icon, diameter=44, icon_size=22,
+                                     icon_color=ICON_WHITE, bg_color=icon_bg))
+    badge_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    badge_row = QHBoxLayout()
+    badge_row.addStretch()
+    badge_row.addWidget(badge_lbl)
+    badge_row.addStretch()
+    layout.addLayout(badge_row)
+    layout.addSpacing(14)
+
+    # Title
+    title_lbl = QLabel(title)
+    title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title_lbl.setWordWrap(True)
+    title_lbl.setStyleSheet(
+        f"color:{Theme.TXT}; font-size:16px; font-weight:700;")
+    layout.addWidget(title_lbl)
+    layout.addSpacing(8)
+
+    # Body text
+    body_lbl = QLabel(text)
+    body_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    body_lbl.setWordWrap(True)
+    body_lbl.setStyleSheet(
+        f"color:{Theme.TXT_SOFT}; font-size:13px; line-height:1.4;")
+    layout.addWidget(body_lbl)
+    layout.addSpacing(22)
+
+    # Divider
+    div = QFrame()
+    div.setFixedHeight(1)
+    div.setStyleSheet(f"background:{Theme.BORDER}; border:none;")
+    layout.addWidget(div)
+    layout.addSpacing(16)
+
+    _SEC = f"""
+        QPushButton {{
+            background:transparent; color:{Theme.TXT_SOFT};
+            border:1px solid {Theme.BORDER}; border-radius:8px;
+            font-size:14px; font-weight:600; padding:0;
+        }}
+        QPushButton:hover {{ border-color:{Theme.FIELD_BRD}; color:{Theme.TXT}; }}
+    """
+    _PRI = f"""
+        QPushButton {{
+            background:{Theme.ACCENT}; color:white; border:none;
+            border-radius:8px; font-size:14px; font-weight:700; padding:0;
+        }}
+        QPushButton:hover {{ background:{Theme.ACCENT_HI}; }}
+        QPushButton:pressed {{ background:{Theme.ACCENT_LO}; }}
+    """
+
+    btn_row = QHBoxLayout()
+    btn_row.setSpacing(10)
+    if confirm:
+        no_btn = QPushButton(no_label)
+        no_btn.setFixedHeight(36)
+        no_btn.setStyleSheet(_SEC)
+        no_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(no_btn)
+        yes_btn = QPushButton(yes_label)
+        yes_btn.setFixedHeight(36)
+        yes_btn.setStyleSheet(_PRI)
+        yes_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(yes_btn)
+    else:
+        ok_btn = QPushButton(ok_label)
+        ok_btn.setFixedHeight(36)
+        ok_btn.setStyleSheet(_PRI)
+        ok_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(ok_btn)
+
+    layout.addLayout(btn_row)
+    return dlg.exec() == QDialog.DialogCode.Accepted
+
+
+# Backward-compatible shim used in LoadDataScreen
+def show_popup_window(title, text, header_icon_path=None, parent=None):
+    show_branded_dialog(parent, title, text,
+                        icon=OutlineIcon.CIRCLE_X, icon_bg='#ef4444')
 
 class ImageWidget(pg.GraphicsLayoutWidget):
     def __init__(self,image_arr,panel_size=(200,200)):
         super().__init__()
-        # Remove outer margins of the GraphicsLayoutWidget
         self.ci.setContentsMargins(0, 0, 0, 0)
         self.ci.layout.setSpacing(0)
-
-        # Remove Qt frame around widget
         self.setFrameStyle(0)
 
-        # Create a ViewBox with no padding
         self.plot = self.addViewBox()
         self.plot.setAspectLocked(True)
-        self.plot.suggestPadding(0)      # *** THIS removes most of the visible border ***
-        self.plot.setBorder(None)    # removes ViewBox border
+        self.plot.suggestPadding(0)
+        self.plot.setBorder(None)
 
         panel_h, panel_w = panel_size[0], panel_size[1]
         self.img_h, self.img_w = image_arr.shape[0], image_arr.shape[1]
-        # self.plot = self.addViewBox()
-        # self.plot.setAspectLocked(True)
         self.img_item = pg.ImageItem()
         self.plot.addItem(self.img_item)
-        self.img_item.setImage(image_arr)
         self.setFixedSize(panel_h, panel_w)
         self.plot.setLimits(xMin=0, xMax=self.img_w, yMin=0, yMax=self.img_h, minXRange=10, minYRange=10)
 
-    def update_image(self,new_image):
-        self.img_item.setImage(new_image)
+        self._grayscale = image_arr.ndim == 2
+        self._base_lo = 0.0
+        self._base_hi = 1.0
+        self._contrast_scale = 1.0
+        if self._grayscale:
+            self._compute_base_levels(image_arr)
+            self.img_item.setImage(image_arr, autoLevels=False)
+            self._apply_levels()
+        else:
+            self.img_item.setImage(image_arr)
+
+    def _compute_base_levels(self, arr):
+        flat = arr.ravel().astype(float)
+        lo = float(np.percentile(flat, 2))
+        hi = float(np.percentile(flat, 99))
+        self._base_lo = lo
+        self._base_hi = hi if hi > lo else lo + 1.0
+
+    def _apply_levels(self):
+        span = self._base_hi - self._base_lo
+        self.img_item.setLevels([self._base_lo, self._base_lo + span * self._contrast_scale])
+
+    def set_contrast_scale(self, slider_value):
+        """slider_value 1-100: higher = tighter upper limit = more contrast."""
+        self._contrast_scale = 10 ** ((50 - slider_value) / 60.0)
+        self._apply_levels()
+
+    def update_image(self, new_image):
+        if self._grayscale:
+            self._compute_base_levels(new_image)
+            self.img_item.setImage(new_image, autoLevels=False)
+            self._apply_levels()
+        else:
+            self.img_item.setImage(new_image)
         self.plot.setLimits(xMin=0, xMax=self.img_w, yMin=0, yMax=self.img_h, minXRange=10, minYRange=10)
 
 
@@ -307,6 +585,77 @@ class Panel(QFrame):
     def add_layout(self,new_layout):
         self.layout.addLayout(new_layout)
 
+class ScrollPanel(QFrame):
+    def __init__(self, border_radius=12, vertical=True):
+        super().__init__()
+        self.border_radius = border_radius
+
+        # Outer layout holds the title + scroll area
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+
+        # Scroll area setup
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Inner container widget inside the scroll area
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("background-color: transparent;")
+        if vertical:
+            self.inner_layout = QVBoxLayout(self.scroll_widget)
+        else:
+            self.inner_layout = QHBoxLayout(self.scroll_widget)
+        self.inner_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.layout.addWidget(self.scroll_area)
+
+        self._apply_stylesheet()
+
+    def _apply_stylesheet(self):
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Theme.CARD};
+                border-radius: {self.border_radius}px;
+                padding: 0px;
+            }}
+            QScrollArea {{
+                background-color: transparent;
+                border: none;
+            }}
+            QLabel#title {{
+                font-size: 18px;
+                font-weight: 600;
+                color: white;
+                padding: 8px;
+            }}
+        """ + SCROLLBAR_SS)
+
+    def add_title(self, title='No title', center_title=False):
+        self.title_widget = QLabel(title)
+        if center_title:
+            self.title_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_widget.setObjectName('title')
+        # Insert title at position 0, before the scroll area
+        self.layout.insertWidget(0, self.title_widget, alignment=Qt.AlignmentFlag.AlignTop)
+        self._apply_stylesheet()
+
+    def change_title(self, new_title):
+        self.title_widget.setText(new_title)
+
+    def add_widget(self, new_widget, stretch=(True, True)):
+        if stretch[0]:
+            self.inner_layout.addStretch()
+        self.inner_layout.addWidget(new_widget)
+        if stretch[1]:
+            self.inner_layout.addStretch()
+
+    def add_layout(self, new_layout):
+        self.inner_layout.addLayout(new_layout)
+
 class StyledTextBox(QGroupBox):
     def __init__(self, title, content):
         super().__init__(title)
@@ -323,81 +672,130 @@ class StyledTextBox(QGroupBox):
 
         layout.addWidget(self.label)
 
-        DARK_BG = "#0f1c33"
-
-        self.setStyleSheet("""
-                            QGroupBox {
-                                border: 1px solid lightgray;
-                                border-radius: 5px;
+        self.setStyleSheet(f"""
+                            QGroupBox {{
+                                border: 1px solid {Theme.BORDER};
+                                border-radius: 8px;
                                 margin-top: 10px;
-                                background-color: #152238;
-                            }
+                                background-color: #1a2a44;
+                            }}
 
-                            QGroupBox::title {
+                            QGroupBox::title {{
                             subcontrol-origin: margin;
                             subcontrol-position: top left;
-                            background-color: #152238;
-                            color: lightgray;
+                            left: 8px;
+                            padding: 0 4px;
+                            background-color: {Theme.CARD};
+                            color: {Theme.TXT_MUTE};
                             top: -1px;
-                            }
-                            QLabel {
-                            color: white;
-                            }
+                            }}
+                            QLabel {{
+                            color: {Theme.TXT};
+                            }}
                             """)
-    
+
     def update_content(self,new_text):
         self.label.setText(new_text)
 
-class StyledInputBox(QGroupBox):
-    def __init__(self, title, content,caps_lock=False, N_max_lines=None,center_text=False,quick_inspection_check=None):
-        super().__init__(title)
-        self.quick_inspection_check=quick_inspection_check
+class MetadataField(QWidget):
+    """A clean label-over-value row for read-only metadata (no boxy frame)."""
+    def __init__(self, label, value, mono=False):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("metaField")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(2, 7, 2, 8)
+        lay.setSpacing(3)
+        self.label = QLabel(str(label))
+        self.label.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700; "
+            f"letter-spacing:0.6px; background:transparent;")
+        self.value = QLabel('' if str(value)=='nan' else str(value))
+        self.value.setWordWrap(True)
+        self.value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        mono_css = "font-family:'SF Mono','Menlo','Consolas',monospace;" if mono else ""
+        self.value.setStyleSheet(
+            f"color:{Theme.TXT}; font-size:15px; font-weight:600; {mono_css} background:transparent;")
+        lay.addWidget(self.label)
+        lay.addWidget(self.value)
+        self.setStyleSheet(f"QWidget#metaField {{ border-bottom: 1px solid {Theme.BORDER}; }}")
 
-        self.caps_lock=caps_lock
-        self.greyed_out=False
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 5, 4, 5)
-        layout.setSpacing(0)
+    def update_content(self, new_text):
+        self.value.setText('' if str(new_text)=='nan' else str(new_text))
 
+class StyledInputBox(QWidget):
+    def __init__(self, title, content, caps_lock=False, N_max_lines=None, center_text=False, quick_inspection_check=None):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("styledInputBox")
+        self.setStyleSheet("QWidget#styledInputBox { background: transparent; }")
+        self.quick_inspection_check = quick_inspection_check
+        self.caps_lock = caps_lock
+        self.greyed_out = False
+        self.center_text = center_text
+        self.N_max_lines = N_max_lines
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+
+        # Title row: label + optional lock icon
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(4)
+
+        self.title_label = QLabel(str(title))
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet(
+            f"color:{Theme.TXT_MUTE}; font-size:11px; font-weight:700; "
+            f"letter-spacing:0.5px; background:transparent;")
+
+        self._lock_label = QLabel()
+        self._lock_label.setPixmap(tabler_pixmap(OutlineIcon.LOCK, size=11, color="#f59e0b"))
+        self._lock_label.setFixedSize(13, 13)
+        self._lock_label.setScaledContents(True)
+        self._lock_label.setStyleSheet("background:transparent;")
+        self._lock_label.hide()
+
+        title_row.addWidget(self.title_label)
+        title_row.addStretch()
+        title_row.addWidget(self._lock_label)
+
+        # Text edit below
         self.text_edit = QTextEdit()
-        self.center_text=center_text
-        self.N_max_lines=N_max_lines
+        self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
+        self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)
+
+        # Forward setFocus() calls to the inner editor so event filters installed
+        # on text_edit receive key events regardless of which object focus was set on.
+        self.setFocusProxy(self.text_edit)
+
+        outer.addLayout(title_row)
+        outer.addWidget(self.text_edit)
+
         self.update_text(str(content))
         if self.N_max_lines:
             self.text_edit.textChanged.connect(self._enforce_max_lines)
         if self.center_text:
             self.text_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.text_edit.setWordWrapMode(QTextOption.WrapMode.WordWrap)
-        self.text_edit.setFrameShape(QTextEdit.Shape.NoFrame)  # removes inner border
-        
         if caps_lock:
-            self.text_edit.textChanged.connect(self._force_uppercase)        
-        layout.addWidget(self.text_edit)
+            self.text_edit.textChanged.connect(self._force_uppercase)
 
-        self.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid lightgray;
-                border-radius: 5px;
-                margin-top: 10px;
-                background-color: #152238;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                background-color: #152238;
-                color: lightgray;
-                top: -1px;
-            }
-            QTextEdit {
-                color: white;
-                background-color: #152238;
-            }
-            QTextEdit:focus {
-                border: 1px solid #4A9EFF;
-                border-radius: 3px;
-            }
-        """)
+        self._apply_style()
         self._set_line_count()
+
+    def _apply_style(self, focus=False, disabled=False):
+        border = Theme.ACCENT if focus else Theme.FIELD_BRD
+        text = Theme.TXT_MUTE if disabled else Theme.TXT
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                color: {text};
+                background-color: {Theme.FIELD};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 4px 8px;
+            }}
+        """)
 
     # def eventFilter(self,obj,event):
     #     if obj == self.text_edit:
@@ -409,97 +807,22 @@ class StyledInputBox(QGroupBox):
     #     return super().eventFilter(obj, event)
     
     def _set_border(self,with_focus_outline):
-        if with_focus_outline:
-            self.setStyleSheet("""
-                                QGroupBox {
-                                    border: 1px solid lightgray;
-                                    border-radius: 5px;
-                                    margin-top: 10px;
-                                    background-color: #152238;
-                                }
-                                QGroupBox::title {
-                                    subcontrol-origin: margin;
-                                    subcontrol-position: top left;
-                                    background-color: #152238;
-                                    color: lightgray;
-                                    top: -1px;
-                                }
-                                QTextEdit {
-                                    color: white;
-                                    background-color: #152238;
-                                }
-                                QTextEdit:focus {
-                                    border: 1px solid #4A9EFF;
-                                    border-radius: 3px;
-                                }
-                                """)
-        else:
-            self.setStyleSheet("""
-                    QGroupBox {
-                        border: 1px solid lightgray;
-                        border-radius: 5px;
-                        margin-top: 10px;
-                        background-color: #152238;
-                    }
-                    QGroupBox::title {
-                        subcontrol-origin: margin;
-                        subcontrol-position: top left;
-                        background-color: #152238;
-                        color: lightgray;
-                        top: -1px;
-                    }
-                    QTextEdit {
-                        color: white;
-                        background-color: #152238;
-                    }
-                    """)
+        self._apply_style(focus=with_focus_outline, disabled=self.greyed_out)
 
     def disable_input(self,grey_out=True):
         self.text_edit.setReadOnly(True)
         if grey_out:
-            self.setStyleSheet("""
-                QGroupBox {
-                    border: 1px solid lightgray;
-                    border-radius: 5px;
-                    margin-top: 10px;
-                    background-color: #152238;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    subcontrol-position: top left;
-                    background-color: #152238;
-                    color: lightgray;
-                    top: -1px;
-                }
-                QTextEdit {
-                    color: lightgray;
-                    background-color: #152238;
-                }
-            """)
             self.greyed_out=True
-    
+            self._apply_style(disabled=True)
+
     def enable_input(self):
         self.text_edit.setReadOnly(False)
         if self.greyed_out:
-            self.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid lightgray;
-                border-radius: 5px;
-                margin-top: 10px;
-                background-color: #152238;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                background-color: #152238;
-                color: lightgray;
-                top: -1px;
-            }
-            QTextEdit {
-                color: white;
-                background-color: #152238;
-            }
-            """)
+            self.greyed_out=False
+            self._apply_style()
+
+    def show_lock(self, visible: bool):
+        self._lock_label.setVisible(visible)
 
     def update_text(self,new_text):
         new_text=str(new_text)
@@ -514,10 +837,11 @@ class StyledInputBox(QGroupBox):
         current_content = self.text_edit.toPlainText()
         return current_content
 
-    def change_input_size(self,new_size):
+    def change_input_size(self, new_size):
         font = QFont()
         font.setPointSize(int(new_size))
         self.text_edit.setFont(font)
+        self._set_line_count()
 
     def _force_uppercase(self):
         cursor = self.text_edit.textCursor()
@@ -550,6 +874,19 @@ class StyledInputBox(QGroupBox):
 
     def setFocus(self):
         self.text_edit.setFocus()
+
+    def set_caps_lock(self, enabled: bool):
+        if enabled == self.caps_lock:
+            return
+        self.caps_lock = enabled
+        if enabled:
+            self.text_edit.textChanged.connect(self._force_uppercase)
+            self._force_uppercase()
+        else:
+            try:
+                self.text_edit.textChanged.disconnect(self._force_uppercase)
+            except RuntimeError:
+                pass
 
 class StatusLED(QWidget):
     COLORS = {"red":'#e74c3c',
@@ -632,7 +969,8 @@ class StyledToggleSwitch(QCheckBox):
 class StyledTabBar(QWidget):
     tab_clicked = pyqtSignal(str)  # emits the name of the clicked tab
 
-    def __init__(self, tab_names: dict, orientation='horizontal',add_stretches=False,parent=None):
+    def __init__(self, tab_names: dict, orientation='horizontal', add_stretches=False,
+                 icons: dict = None, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("""
@@ -646,25 +984,28 @@ class StyledTabBar(QWidget):
         self.tab_names = list(self.tab_names_signals_dict.keys())
         self.active_tab = self.tab_names[0]
         self.buttons = {}
+        self._icons = icons or {}
 
-        self.orientation=orientation
+        self.orientation = orientation
 
-        if self.orientation=='horizontal':
+        if self.orientation == 'horizontal':
             layout = QHBoxLayout()
-        elif self.orientation=='vertical':
+        elif self.orientation == 'vertical':
             layout = QVBoxLayout()
 
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
         self.setLayout(layout)
 
-        for tab_n,name in enumerate(tab_names):
+        for tab_n, name in enumerate(tab_names):
             btn = QPushButton(name)
             btn.setCheckable(False)
             btn.clicked.connect(lambda checked, n=name: self._on_tab_clicked(n))
+            if name in self._icons:
+                btn.setIconSize(QSize(16, 16))
             self.buttons[name] = btn
             layout.addWidget(btn)
-            if add_stretches and tab_n<len(tab_names)-1:
+            if add_stretches and tab_n < len(tab_names) - 1:
                 layout.addStretch()
         if orientation == 'vertical' and add_stretches:
             layout.addStretch()
@@ -683,73 +1024,314 @@ class StyledTabBar(QWidget):
         self._update_styles()
 
     def _update_styles(self):
-        if self.orientation=='horizontal':
-            active_style = """
-                QPushButton {
-                    background-color: white;
+        has_icons = bool(self._icons)
+        icon_padding = "padding: 6px 14px 6px 10px; text-align: left;" if has_icons and self.orientation == 'vertical' else "padding: 6px 14px;"
+        if self.orientation == 'horizontal':
+            active_style = f"""
+                QPushButton {{
+                    background-color: {Theme.ACCENT};
                     border-radius: 8px;
-                    color: #152238;
-                    font-size: 16px;
+                    color: white;
+                    font-size: 15px;
                     font-weight: 600;
                     padding: 6px 18px;
-                }
-                QPushButton:hover {
-                    background-color: #f0ffff;
-                }
-                QPushButton:pressed {
-                    background-color: #f0f8ff;
-                    padding-top: 2px;
-                    padding-left: 2px;
-                }
-                QPushButton:focus {
-                    border: 3px solid #4A9EFF;
-                    border-radius: 8px;
-                }
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: {Theme.ACCENT_HI}; }}
             """
         else:
-            active_style = """
-                QPushButton {
-                    background-color: white;
+            active_style = f"""
+                QPushButton {{
+                    background-color: {Theme.ACCENT};
                     border-radius: 8px;
-                    color: #152238;
-                    font-size: 16px;
+                    color: white;
+                    font-size: 15px;
                     font-weight: 600;
-                    padding: 3px 9px;
-                }
-                QPushButton:hover {
-                    background-color: #f0ffff;
-                }
-                QPushButton:pressed {
-                    background-color: #f0f8ff;
-                    padding-top: 2px;
-                    padding-left: 2px;
-                }
-                QPushButton:focus {
-                    border: 3px solid #4A9EFF;
-                    border-radius: 8px;
-                }
-            """   
-        inactive_style = """
-            QPushButton {
-                background-color: #d3d3d3;
+                    {icon_padding}
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: {Theme.ACCENT_HI}; }}
+            """
+        inactive_style = f"""
+            QPushButton {{
+                background-color: transparent;
                 border-radius: 8px;
-                color: #4a4a4a;
-                font-size: 16px;
+                color: {Theme.TXT_MUTE};
+                font-size: 15px;
                 font-weight: 600;
-                padding: 3px 9px;
-            }
-            QPushButton:hover {
-                background-color: #dcdcdc;
-            }
-            QPushButton:pressed {
-                background-color: #c8c8c8;
-                padding-top: 2px;
-                padding-left: 2px;
-            }
-            QPushButton:focus {
-                border: 3px solid #4A9EFF;
-                border-radius: 8px;
-            }
+                {icon_padding}
+                border: none;
+            }}
+            QPushButton:hover {{ background-color: #17273f; color: {Theme.TXT_SOFT}; }}
         """
         for name, btn in self.buttons.items():
-            btn.setStyleSheet(active_style if name == self.active_tab else inactive_style)
+            is_active = (name == self.active_tab)
+            btn.setStyleSheet(active_style if is_active else inactive_style)
+            if name in self._icons:
+                color = "#ffffff" if is_active else Theme.TXT_MUTE
+                btn.setIcon(tabler_icon(self._icons[name], size=16, color=color))
+
+
+class StyledGroupBox(QGroupBox):
+    def __init__(self, title, vertical=True, parent=None):
+        super().__init__(title)
+        if vertical:
+            self.inner_layout = QVBoxLayout(self)
+        else:
+            self.inner_layout = QHBoxLayout(self)
+        self.inner_layout.setContentsMargins(4, 5, 4, 5)
+        self.inner_layout.setSpacing(6)
+        self.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {Theme.BORDER};
+                border-radius: 8px;
+                margin-top: 10px;
+                background-color: {Theme.CARD};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 8px;
+                padding: 0 4px;
+                background-color: {Theme.CARD};
+                color: {Theme.TXT_MUTE};
+                top: -1px;
+            }}
+        """)
+
+    def add_widget(self, widget, stretch=0):
+        self.inner_layout.addWidget(widget, stretch)
+
+    def add_layout(self, layout, stretch=0):
+        self.inner_layout.addLayout(layout, stretch)
+
+    def add_stretch(self):
+        self.inner_layout.addStretch()
+
+    def add_spacing(self, spacing: int):
+        self.inner_layout.addSpacing(spacing)
+
+class StyledEmptyWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("emptyWidget")
+        self.setStyleSheet("QWidget#emptyWidget { background-color: #152238; }")
+
+class InspectionSettings:
+    def __init__(self,desing_file_path, config_file_path):
+        self.desing_file_path, self.config_file_path = desing_file_path, config_file_path
+
+        #Get design of menus
+        with open(desing_file_path,'r') as design_file:
+            self.desing_file_json = json.load(design_file)
+        #Get configuration file
+        with open(config_file_path,'r') as config_file:
+            self.config_file_json = json.load(config_file)
+
+        self.tabs_names = list(self.desing_file_json['tabs'].keys())
+
+        self.name_to_widget_map={}
+
+    def get_stacked_widget(self):
+        self.stacked_settings_widget = QStackedWidget()
+
+        for menu_name in self.tabs_names:
+            temp_widget=StyledEmptyWidget()
+            host_layout=QVBoxLayout()
+            #Add function to populate settings
+            host_layout = self._populate_layout(menu_name,host_layout)
+            temp_widget.setLayout(host_layout)
+            self.stacked_settings_widget.addWidget(temp_widget)
+        self.stacked_settings_widget.setCurrentIndex(0)
+
+        return self.stacked_settings_widget
+    
+    def get_setting(self, name):
+        if name in self.name_to_widget_map:
+            return self.name_to_widget_map[name].get_status()
+        return self.config_file_json.get(name)
+
+    def update_config_file(self):
+        all_names = list(self.config_file_json.keys())
+        existing_widgets_names = list(self.name_to_widget_map.keys())
+        for widget_name in all_names:
+            if widget_name in existing_widgets_names:
+                self.config_file_json[widget_name] = self.name_to_widget_map[widget_name].get_status()
+
+        with open(self.config_file_path,'w') as old_config_file:
+            json.dump(self.config_file_json, old_config_file, indent=4)
+
+    def _populate_layout(self,menu_name,host_layout):
+        #Determine if a frame is needed:
+        add_frame=True if type(self.desing_file_json['tabs'][menu_name])==dict else False
+        if add_frame:
+            frames_names_list = list(self.desing_file_json['tabs'][menu_name].keys())
+            for frame_name in frames_names_list:
+                #Create and add frame to host layout
+                frame = StyledGroupBox(title=frame_name)
+                host_layout.addWidget(frame)
+                #Populate frame
+                widgets_infos = self.desing_file_json['tabs'][menu_name][frame_name]
+                for widget_info in widgets_infos:
+                    #Create widget
+                    widget=self._create_widget(widget_info)
+                    if widget:
+                        frame.add_widget(widget)
+                        if 'activate if checked' in widget_info:
+                            ctrl = self.name_to_widget_map.get(widget_info['activate if checked'])
+                            if ctrl:
+                                widget.setEnabled(ctrl.get_status())
+                                ctrl.checkbox.stateChanged.connect(
+                                    lambda state, w=widget: w.setEnabled(state == Qt.CheckState.Checked.value)
+                                )
+        host_layout.addStretch()
+        return host_layout
+    
+    def _create_widget(self,widget_info):
+        widget=None
+        if widget_info['type']=='checkmark':
+            widget=SettingsAssets.Checkbox(widget_info['label'], widget_info['caption'])
+        elif widget_info['type']=='editable list':
+            widget=SettingsAssets.ListWidget(title=widget_info['label'], caption=widget_info['caption'])
+        elif widget_info['type']=='radio select':
+            widget=SettingsAssets.RadioSelector(options=widget_info['options'], title=widget_info.get('label'))
+        elif widget_info['type']=='drag order list':
+            widget=SettingsAssets.DraggableOrderList()
+        elif widget_info['type']=='section label':
+            widget=SettingsAssets.SectionLabel(widget_info['label'], widget_info.get('caption'))
+        elif widget_info['type'] == 'number input':
+            widget = SettingsAssets.NumberInput(
+                label=widget_info['label'],
+                caption=widget_info.get('caption'),
+                minimum=widget_info.get('minimum', 0),
+                maximum=widget_info.get('maximum', 300),
+                suffix=widget_info.get('suffix', 'sec'),
+                step=widget_info.get('step', 15),
+            )
+
+        if widget:
+            if 'name' in widget_info:
+                widget.set_status(self.config_file_json[widget_info['name']])
+                self.name_to_widget_map[widget_info['name']]=widget
+            return widget
+        else:
+            return
+
+
+# ── VoiceOver animated indicator ─────────────────────────────────────────────
+
+class VoiceOverIndicator(QWidget):
+    """
+    Jarvis-style arc animation for VoiceOver mode.
+
+    Three concentric partial arcs rotate independently (middle one counter-
+    clockwise) with speed and colour changing per state:
+        'listening'  — slow blue arcs + pulsing centre dot
+        'processing' — fast yellow arcs
+        'heard'      — brief green flash, then back to listening speed
+        'error'      — red arcs, stop rotating
+    """
+
+    _ARC_SPAN    = 240 * 16       # Qt arc units (1/16 °)
+    _RADII       = (7, 11, 15)    # px, inner → outer
+    _DIRECTIONS  = (1, -1, 1)     # CW, CCW, CW
+
+    _COLORS = {
+        'listening':  (74,  158, 255),   # accent blue
+        'processing': (243, 156,  18),   # amber
+        'heard':      (46,  204, 113),   # green
+        'error':      (231,  76,  60),   # red
+    }
+    _SPEEDS = {                          # °/frame per arc (inner, mid, outer)
+        'listening':  (0.6, 0.9, 0.4),
+        'processing': (3.5, 5.0, 2.5),
+        'heard':      (1.2, 1.8, 0.8),
+        'error':      (0.0, 0.0, 0.0),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._state  = 'listening'
+        self._angles = [0.0, 120.0, 240.0]   # staggered start angles
+        self._pulse  = 0.0                    # 0–2π for centre dot pulse
+        self._heard_t = 0.0                   # countdown after 'heard'
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(33)                 # ~30 fps
+
+        # Size: arc circle (36 px) + gap + label
+        self.setFixedHeight(36)
+        self._label_text = 'Listening...'
+
+    def set_state(self, state: str, label: str = ''):
+        self._state = state
+        self._label_text = label
+        if state == 'heard':
+            self._heard_t = 18              # ~0.6 s at 30 fps, then back to listening
+        self.update()
+
+    def _tick(self):
+        speeds = self._SPEEDS.get(self._state, (0, 0, 0))
+        for i, (speed, direction) in enumerate(zip(speeds, self._DIRECTIONS)):
+            self._angles[i] = (self._angles[i] + speed * direction) % 360
+
+        self._pulse = (self._pulse + 0.08) % (2 * math.pi)
+
+        if self._heard_t > 0:
+            self._heard_t -= 1
+            if self._heard_t == 0:
+                self._state = 'listening'
+                self._label_text = 'Listening...'
+
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        h  = self.height()
+        r_outer = self._RADII[-1]
+        cx = r_outer + 2          # circle centre x
+        cy = h // 2
+
+        r, g, b = self._COLORS.get(self._state, (74, 158, 255))
+
+        # ── Arcs ─────────────────────────────────────────────────────
+        alphas = (220, 160, 100)
+        widths = (2.0, 1.5, 1.0)
+        for i, (radius, alpha, width) in enumerate(zip(self._RADII, alphas, widths)):
+            pen = QPen(QColor(r, g, b, alpha), width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            start_angle = int(self._angles[i] * 16)
+            rect = QRect(cx - radius, cy - radius, radius * 2, radius * 2)
+            painter.drawArc(rect, start_angle, self._ARC_SPAN)
+
+        # ── Centre dot (pulses in size) ───────────────────────────────
+        pulse_r = 2.5 + 1.0 * (math.sin(self._pulse) * 0.5 + 0.5)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(r, g, b, 230))
+        painter.drawEllipse(
+            QRectF(cx - pulse_r, cy - pulse_r, pulse_r * 2, pulse_r * 2))
+
+        # ── Label ────────────────────────────────────────────────────
+        if self._label_text:
+            text_x = cx + r_outer + 10
+            painter.setPen(QColor(Theme.TXT_SOFT))
+            font = painter.font()
+            font.setPointSize(11)
+            font.setWeight(QFont.Weight.Medium)
+            painter.setFont(font)
+            painter.drawText(
+                QRect(text_x, 0, self.width() - text_x, h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                self._label_text,
+            )
+
+    def sizeHint(self):
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._label_text) + 10
+        return QSize(self._RADII[-1] * 2 + 14 + text_w, 36)

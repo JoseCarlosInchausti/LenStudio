@@ -24,7 +24,12 @@ class LenStudio(QMainWindow):
 
         super().__init__()
         self.setWindowTitle(self.APP_NAME)
-        self.setGeometry(100, 100, 1000, 800)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(max(int(screen.width()  * 0.80), 1000), 1600)
+        h = min(max(int(screen.height() * 0.85), 800),  1100)
+        self.resize(w, h)
+        self.move(screen.center() - self.rect().center())
 
         # Create stack of widgets
         self.stacked_widget = QStackedWidget()
@@ -70,6 +75,22 @@ class LenStudio(QMainWindow):
         self.stacked_widget.removeWidget(old_widget)
         old_widget.deleteLater()
         self.stacked_widget.insertWidget(index, new_widget)
+
+    def closeEvent(self, event):
+        studio = self.stacked_widget.currentWidget()
+        if hasattr(studio, 'Settings') and bool(studio.Settings.get_setting('confirm_on_close')):
+            from Assets import show_branded_dialog
+            from Icons import OutlineIcon
+            confirmed = show_branded_dialog(
+                self, 'Close LenStudio',
+                'Any unsaved changes will be lost. Close anyway?',
+                icon=OutlineIcon.ALERT_TRIANGLE, icon_bg='#f59e0b',
+                confirm=True, yes_label='Close', no_label='Cancel',
+            )
+            if not confirmed:
+                event.ignore()
+                return
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
